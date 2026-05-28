@@ -15,6 +15,7 @@ import android.view.WindowManager
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.BlockingQueue
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -22,6 +23,7 @@ class ScreenCaptureEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "ScreenCaptureEngine"
+        private const val WARMUP_TIMEOUT_MS = 5000L
     }
 
     private var imageReader: ImageReader? = null
@@ -32,9 +34,10 @@ class ScreenCaptureEngine(private val context: Context) {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
 
-    private val imageQueue: BlockingQueue<Image> = ArrayBlockingQueue(2)
+    private val imageQueue: BlockingQueue<Image> = ArrayBlockingQueue(4)
     private val isCapturing = AtomicBoolean(false)
     private val isInitialized = AtomicBoolean(false)
+    private val warmupLatch = CountDownLatch(1)
 
     private var screenWidth = 0
     private var screenHeight = 0
@@ -66,14 +69,20 @@ class ScreenCaptureEngine(private val context: Context) {
 
             val reader = ImageReader.newInstance(
                 screenWidth, screenHeight,
-                PixelFormat.RGBA_8888, 2
+                PixelFormat.RGBA_8888, 4
             )
-            reader.setOnImageAvailableListener({ reader ->
+            reader.setOnImageAvailableListener({ r ->
                 try {
-                    val image = reader?.acquireLatestImage()
+                    val image = r?.acquireLatestImage()
                     if (image != null) {
-                        if (!imageQueue.offer(image)) {
+                        if (warmupLatch.count > 0) {
                             image.close()
+                            warmupLatch.countDown()
+                            Log.d(TAG, "Warmup frame received")
+                        } else {
+                            if (!imageQueue.offer(image)) {
+                                image.close()
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -102,6 +111,12 @@ class ScreenCaptureEngine(private val context: Context) {
                 throw IllegalStateException("Failed to create VirtualDisplay")
             }
             virtualDisplay = display
+            Log.d(TAG, "VirtualDisplay created, waiting for warmup...")
+
+            val warmupOk = warmupLatch.await(WARMUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            if (!warmupOk) {
+                Log.w(TAG, "Warmup timeout, proceeding anyway")
+            }
 
             Log.d(TAG, "ScreenCaptureEngine started successfully")
         } catch (e: Exception) {
@@ -111,7 +126,7 @@ class ScreenCaptureEngine(private val context: Context) {
         }
     }
 
-    fun capture(timeoutMs: Long = 3000): ByteArray {
+    fun capture(timeoutMs: Long = 5000): ByteArray {
         if (!isInitialized.get()) {
             throw IllegalStateException("ScreenCaptureEngine not initialized. Call start() first.")
         }
