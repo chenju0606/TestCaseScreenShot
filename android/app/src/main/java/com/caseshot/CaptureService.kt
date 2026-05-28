@@ -184,10 +184,11 @@ class CaptureService : Service() {
             manager.createNotificationChannel(captureChannel)
 
             val resultChannel = NotificationChannel(
-                CHANNEL_RESULT_ID, "CaseShot 结果", NotificationManager.IMPORTANCE_DEFAULT
+                CHANNEL_RESULT_ID, "CaseShot 结果", NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "截图完成和用例切换通知"
                 enableVibration(true)
+                vibrationPattern = longArrayOf(0, 100)
             }
             manager.createNotificationChannel(resultChannel)
         }
@@ -224,6 +225,8 @@ class CaptureService : Service() {
             .setSmallIcon(if (isError) android.R.drawable.ic_dialog_alert else android.R.drawable.ic_menu_camera)
             .setAutoCancel(true)
             .setStyle(Notification.BigTextStyle().bigText(message))
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setPriority(if (isError) Notification.PRIORITY_HIGH else Notification.PRIORITY_DEFAULT)
             .build()
 
         val manager = getSystemService(NotificationManager::class.java)
