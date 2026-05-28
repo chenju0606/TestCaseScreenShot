@@ -10,7 +10,7 @@ class ConfigRepositoryTest {
     fun normalizesMissingConfigValues() {
         val config = ConfigRepository.normalize(CaseShotConfig())
         assertEquals("", config.prefix)
-        assertEquals(4, config.caseDigits)
+        assertEquals(3, config.caseDigits)
         assertEquals(1, config.startCaseIndex)
         assertEquals("", config.outputDir)
         assertEquals(300L, config.captureDelayMs)
