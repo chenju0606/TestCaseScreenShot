@@ -13,8 +13,6 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.BlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,6 +22,7 @@ class ScreenCaptureEngine(private val context: Context) {
     companion object {
         private const val TAG = "ScreenCaptureEngine"
         private const val WARMUP_TIMEOUT_MS = 5000L
+        private const val CAPTURE_TIMEOUT_MS = 5000L
     }
 
     private var imageReader: ImageReader? = null
@@ -34,10 +33,15 @@ class ScreenCaptureEngine(private val context: Context) {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
 
-    private val imageQueue: BlockingQueue<Image> = ArrayBlockingQueue(4)
+    @Volatile
+    private var latestImage: Image? = null
+    private val imageLock = Object()
+
     private val isCapturing = AtomicBoolean(false)
     private val isInitialized = AtomicBoolean(false)
     private val warmupLatch = CountDownLatch(1)
+    @Volatile
+    private var captureLatch = CountDownLatch(1)
 
     private var screenWidth = 0
     private var screenHeight = 0
@@ -69,24 +73,26 @@ class ScreenCaptureEngine(private val context: Context) {
 
             val reader = ImageReader.newInstance(
                 screenWidth, screenHeight,
-                PixelFormat.RGBA_8888, 4
+                PixelFormat.RGBA_8888, 3
             )
             reader.setOnImageAvailableListener({ r ->
                 try {
-                    val image = r?.acquireLatestImage()
-                    if (image != null) {
-                        if (warmupLatch.count > 0) {
-                            image.close()
-                            warmupLatch.countDown()
-                            Log.d(TAG, "Warmup frame received")
-                        } else {
-                            if (!imageQueue.offer(image)) {
-                                image.close()
-                            }
-                        }
+                    val image = r?.acquireLatestImage() ?: return@setOnImageAvailableListener
+
+                    if (warmupLatch.count > 0) {
+                        image.close()
+                        warmupLatch.countDown()
+                        Log.d(TAG, "Warmup frame received")
+                        return@setOnImageAvailableListener
                     }
+
+                    synchronized(imageLock) {
+                        latestImage?.close()
+                        latestImage = image
+                    }
+                    captureLatch.countDown()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error acquiring image", e)
+                    Log.e(TAG, "Error in onImageAvailable", e)
                 }
             }, captureHandler)
             imageReader = reader
@@ -126,7 +132,7 @@ class ScreenCaptureEngine(private val context: Context) {
         }
     }
 
-    fun capture(timeoutMs: Long = 5000): ByteArray {
+    fun capture(timeoutMs: Long = CAPTURE_TIMEOUT_MS): ByteArray {
         if (!isInitialized.get()) {
             throw IllegalStateException("ScreenCaptureEngine not initialized. Call start() first.")
         }
@@ -139,14 +145,23 @@ class ScreenCaptureEngine(private val context: Context) {
         }
 
         try {
-            val image = imageQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)
-                ?: throw IllegalStateException("Capture timeout: no image received within ${timeoutMs}ms")
+            captureLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+
+            val image = synchronized(imageLock) {
+                val img = latestImage
+                latestImage = null
+                img
+            } ?: throw IllegalStateException("No image available after timeout")
+
+            captureLatch = CountDownLatch(1)
 
             return try {
                 imageToPngBytes(image)
             } finally {
                 image.close()
             }
+        } catch (e: InterruptedException) {
+            throw IllegalStateException("Capture interrupted")
         } finally {
             isCapturing.set(false)
         }
@@ -178,17 +193,13 @@ class ScreenCaptureEngine(private val context: Context) {
         captureThread = null
         captureHandler = null
 
-        drainImageQueue()
+        synchronized(imageLock) {
+            latestImage?.close()
+            latestImage = null
+        }
 
         mediaProjection = null
         projectionStopped = false
-    }
-
-    private fun drainImageQueue() {
-        while (true) {
-            val image = imageQueue.poll() ?: break
-            image.close()
-        }
     }
 
     private fun imageToPngBytes(image: Image): ByteArray {
