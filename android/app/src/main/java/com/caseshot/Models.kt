@@ -2,7 +2,7 @@ package com.caseshot
 
 data class CaseShotConfig(
     val prefix: String = "",
-    val caseDigits: Int = 4,
+    val caseDigits: Int = 3,
     val startCaseIndex: Int = 1,
     val outputDir: String = "",
     val captureDelayMs: Long = 300L,
