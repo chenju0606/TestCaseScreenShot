@@ -10,6 +10,7 @@ import android.media.projection.MediaProjection
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.WindowManager
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ArrayBlockingQueue
@@ -18,6 +19,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ScreenCaptureEngine(private val context: Context) {
+
+    companion object {
+        private const val TAG = "ScreenCaptureEngine"
+    }
 
     private var imageReader: ImageReader? = null
     private var virtualDisplay: android.hardware.display.VirtualDisplay? = null
@@ -39,50 +44,71 @@ class ScreenCaptureEngine(private val context: Context) {
     private var projectionStopped = false
 
     fun start(projection: MediaProjection) {
-        if (isInitialized.getAndSet(true)) return
+        if (isInitialized.getAndSet(true)) {
+            Log.w(TAG, "Already initialized, skipping")
+            return
+        }
 
-        mediaProjection = projection
+        try {
+            mediaProjection = projection
 
-        val metrics = DisplayMetrics()
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        @Suppress("DEPRECATION")
-        windowManager.defaultDisplay.getRealMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
-        screenDpi = metrics.densityDpi
+            val metrics = DisplayMetrics()
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+            screenWidth = metrics.widthPixels
+            screenHeight = metrics.heightPixels
+            screenDpi = metrics.densityDpi
+            Log.d(TAG, "Screen: ${screenWidth}x${screenHeight} @ ${screenDpi}dpi")
 
-        captureThread = HandlerThread("ScreenCaptureThread").apply { start() }
-        captureHandler = Handler(captureThread!!.looper)
+            captureThread = HandlerThread("ScreenCaptureThread").apply { start() }
+            captureHandler = Handler(captureThread!!.looper)
 
-        imageReader = ImageReader.newInstance(
-            screenWidth, screenHeight,
-            PixelFormat.RGBA_8888, 2
-        ).apply {
-            setOnImageAvailableListener({ reader ->
-                val image = reader?.acquireLatestImage()
-                if (image != null) {
-                    if (!imageQueue.offer(image)) {
-                        image.close()
+            val reader = ImageReader.newInstance(
+                screenWidth, screenHeight,
+                PixelFormat.RGBA_8888, 2
+            )
+            reader.setOnImageAvailableListener({ reader ->
+                try {
+                    val image = reader?.acquireLatestImage()
+                    if (image != null) {
+                        if (!imageQueue.offer(image)) {
+                            image.close()
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error acquiring image", e)
                 }
             }, captureHandler)
-        }
+            imageReader = reader
 
-        projectionCallback = object : MediaProjection.Callback() {
-            override fun onStop() {
-                projectionStopped = true
+            projectionCallback = object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.d(TAG, "MediaProjection stopped")
+                    projectionStopped = true
+                }
             }
-        }
-        projection.registerCallback(projectionCallback!!, captureHandler)
+            projection.registerCallback(projectionCallback!!, captureHandler)
 
-        virtualDisplay = projection.createVirtualDisplay(
-            "CaseShotCapture",
-            screenWidth, screenHeight, screenDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader!!.surface,
-            null,
-            captureHandler
-        ) ?: throw IllegalStateException("Unable to create virtual display")
+            val display = projection.createVirtualDisplay(
+                "CaseShotCapture",
+                screenWidth, screenHeight, screenDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                reader.surface,
+                null,
+                captureHandler
+            )
+            if (display == null) {
+                throw IllegalStateException("Failed to create VirtualDisplay")
+            }
+            virtualDisplay = display
+
+            Log.d(TAG, "ScreenCaptureEngine started successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start ScreenCaptureEngine", e)
+            stop()
+            throw e
+        }
     }
 
     fun capture(timeoutMs: Long = 3000): ByteArray {
@@ -114,6 +140,7 @@ class ScreenCaptureEngine(private val context: Context) {
     fun stop() {
         if (!isInitialized.getAndSet(false)) return
 
+        Log.d(TAG, "Stopping ScreenCaptureEngine")
         isCapturing.set(false)
 
         projectionCallback?.let { cb ->

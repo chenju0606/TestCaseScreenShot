@@ -9,9 +9,18 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.widget.Toast
 
 class CaptureService : Service() {
+
+    companion object {
+        private const val TAG = "CaptureService"
+        const val EXTRA_RESULT_CODE = "com.caseshot.RESULT_CODE"
+        const val EXTRA_RESULT_DATA = "com.caseshot.RESULT_DATA"
+        private const val CHANNEL_ID = "caseshot_capture"
+        private const val NOTIFICATION_ID = 49
+    }
 
     private lateinit var configRepository: ConfigRepository
     private lateinit var stateRepository: StateRepository
@@ -24,12 +33,15 @@ class CaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate")
         configRepository = ConfigRepository(this)
         stateRepository = StateRepository(this)
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand intent=$intent")
+        
         startForeground(NOTIFICATION_ID, buildNotification())
 
         if (intent?.hasExtra(EXTRA_RESULT_CODE) == true) {
@@ -41,19 +53,30 @@ class CaptureService : Service() {
                 intent.getParcelableExtra(EXTRA_RESULT_DATA)
             }
 
+            Log.d(TAG, "resultCode=$resultCode, resultData=$resultData")
+
             if (resultData != null && mediaProjection == null) {
                 val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 val projection = manager.getMediaProjection(resultCode, resultData)
 
                 if (projection != null) {
+                    Log.d(TAG, "MediaProjection obtained, initializing engine")
                     mediaProjection = projection
-                    initCaptureEngine(projection)
+                    try {
+                        initCaptureEngine(projection)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to init capture engine", e)
+                        Toast.makeText(this, "初始化截屏引擎失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                 } else {
+                    Log.e(TAG, "Failed to get MediaProjection")
                     Toast.makeText(this, "无法获取截屏权限", Toast.LENGTH_SHORT).show()
                     stopSelf()
                     return START_NOT_STICKY
                 }
             }
+        } else {
+            Log.w(TAG, "No EXTRA_RESULT_CODE in intent")
         }
 
         ensureOverlay()
@@ -63,18 +86,15 @@ class CaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy")
         releaseResources()
         super.onDestroy()
     }
 
     private fun initCaptureEngine(projection: MediaProjection) {
-        try {
-            captureEngine = ScreenCaptureEngine(this).also {
-                it.start(projection)
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "初始化截屏引擎失败: ${e.message}", Toast.LENGTH_LONG).show()
-            captureEngine = null
+        captureEngine?.stop()
+        captureEngine = ScreenCaptureEngine(this).also {
+            it.start(projection)
         }
     }
 
@@ -127,8 +147,10 @@ class CaptureService : Service() {
 
             Toast.makeText(this, "已保存: ${target.name}", Toast.LENGTH_SHORT).show()
         } catch (e: IllegalStateException) {
+            Log.e(TAG, "Capture failed", e)
             Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
+            Log.e(TAG, "Capture failed", e)
             Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
         } finally {
             if (config.hideFloatingWindowBeforeCapture) {
@@ -168,12 +190,5 @@ class CaptureService : Service() {
             .setContentText("悬浮窗已开启，可连续截图")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build()
-    }
-
-    companion object {
-        const val EXTRA_RESULT_CODE = "com.caseshot.RESULT_CODE"
-        const val EXTRA_RESULT_DATA = "com.caseshot.RESULT_DATA"
-        private const val CHANNEL_ID = "caseshot_capture"
-        private const val NOTIFICATION_ID = 49
     }
 }
