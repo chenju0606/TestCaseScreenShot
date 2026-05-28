@@ -20,6 +20,15 @@ class ScreenCaptureEngine(private val context: Context) {
         windowManager.defaultDisplay.getRealMetrics(metrics)
 
         val imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+        
+        // Register callback before creating virtual display
+        val callback = object : MediaProjection.Callback() {
+            override fun onStop() {
+                // Handle projection stop
+            }
+        }
+        mediaProjection.registerCallback(callback, Handler(Looper.getMainLooper()))
+        
         val display = mediaProjection.createVirtualDisplay(
             "CaseShotCapture",
             metrics.widthPixels,
@@ -56,6 +65,7 @@ class ScreenCaptureEngine(private val context: Context) {
         } finally {
             display.release()
             imageReader.close()
+            mediaProjection.unregisterCallback(callback)
         }
     }
 }
