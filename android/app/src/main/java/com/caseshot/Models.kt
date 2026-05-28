@@ -3,6 +3,7 @@ package com.caseshot
 data class CaseShotConfig(
     val prefix: String = "",
     val caseDigits: Int = 4,
+    val startCaseIndex: Int = 1,
     val outputDir: String = "",
     val captureDelayMs: Long = 300L,
     val hideFloatingWindowBeforeCapture: Boolean = true,

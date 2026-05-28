@@ -13,6 +13,8 @@ import android.view.WindowManager
 import java.io.ByteArrayOutputStream
 
 class ScreenCaptureEngine(private val context: Context) {
+    private var projectionCallback: MediaProjection.Callback? = null
+    
     fun capturePng(mediaProjection: MediaProjection): ByteArray {
         val metrics = DisplayMetrics()
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -20,6 +22,17 @@ class ScreenCaptureEngine(private val context: Context) {
         windowManager.defaultDisplay.getRealMetrics(metrics)
 
         val imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+        
+        // Register callback if not already registered
+        if (projectionCallback == null) {
+            val cb = object : MediaProjection.Callback() {
+                override fun onStop() {
+                    // Handle projection stop
+                }
+            }
+            mediaProjection.registerCallback(cb, Handler(Looper.getMainLooper()))
+            projectionCallback = cb
+        }
         
         val display = mediaProjection.createVirtualDisplay(
             "CaseShotCapture",
@@ -58,5 +71,10 @@ class ScreenCaptureEngine(private val context: Context) {
             display.release()
             imageReader.close()
         }
+    }
+    
+    fun release(mediaProjection: MediaProjection) {
+        projectionCallback?.let { mediaProjection.unregisterCallback(it) }
+        projectionCallback = null
     }
 }

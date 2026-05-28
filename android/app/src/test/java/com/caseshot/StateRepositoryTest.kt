@@ -11,6 +11,16 @@ class StateRepositoryTest {
     }
 
     @Test
+    fun resetToStartCaseSetsCorrectIndex() {
+        val state = StateRepository.resetToStartCase(
+            CaseShotState(prefix = "", caseIndex = 10, shotIndex = 5),
+            "049",
+            3
+        )
+        assertEquals(CaseShotState(prefix = "049", caseIndex = 3, shotIndex = 0), state)
+    }
+
+    @Test
     fun captureSuccessIncrementsShotIndex() {
         val state = StateRepository.afterCaptureSuccess(CaseShotState(prefix = "049", caseIndex = 1, shotIndex = 0))
         assertEquals(CaseShotState(prefix = "049", caseIndex = 1, shotIndex = 1), state)

@@ -11,6 +11,7 @@ class ConfigRepositoryTest {
         val config = ConfigRepository.normalize(CaseShotConfig())
         assertEquals("", config.prefix)
         assertEquals(4, config.caseDigits)
+        assertEquals(1, config.startCaseIndex)
         assertEquals("", config.outputDir)
         assertEquals(300L, config.captureDelayMs)
         assertTrue(config.hideFloatingWindowBeforeCapture)
@@ -25,6 +26,7 @@ class ConfigRepositoryTest {
             CaseShotConfig(
                 prefix = " 049 ",
                 caseDigits = 3,
+                startCaseIndex = 5,
                 outputDir = " /sdcard/MyCases ",
                 captureDelayMs = 500L,
                 hideFloatingWindowBeforeCapture = false,
@@ -36,6 +38,7 @@ class ConfigRepositoryTest {
 
         assertEquals("049", config.prefix)
         assertEquals(3, config.caseDigits)
+        assertEquals(5, config.startCaseIndex)
         assertEquals("/sdcard/MyCases", config.outputDir)
         assertEquals(500L, config.captureDelayMs)
         assertFalse(config.hideFloatingWindowBeforeCapture)

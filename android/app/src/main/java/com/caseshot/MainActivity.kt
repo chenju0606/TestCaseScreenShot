@@ -23,6 +23,7 @@ class MainActivity : Activity() {
 
     private lateinit var prefixInput: EditText
     private lateinit var caseDigitsInput: EditText
+    private lateinit var startCaseIndexInput: EditText
     private lateinit var outputDirInput: EditText
     private lateinit var captureDelayInput: EditText
     private lateinit var hideOverlayCheck: CheckBox
@@ -56,6 +57,7 @@ class MainActivity : Activity() {
         permissionStatus = TextView(this)
         prefixInput = EditText(this).apply { hint = "前缀，可留空，例如 049" }
         caseDigitsInput = EditText(this).apply { hint = "用例编号位数"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
+        startCaseIndexInput = EditText(this).apply { hint = "起始用例编号"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
         outputDirInput = EditText(this).apply { hint = "保存目录，留空使用应用目录" }
         captureDelayInput = EditText(this).apply { hint = "截屏延迟毫秒"; inputType = android.text.InputType.TYPE_CLASS_NUMBER }
         hideOverlayCheck = CheckBox(this).apply { text = "截图前隐藏悬浮窗" }
@@ -86,6 +88,7 @@ class MainActivity : Activity() {
             permissionStatus,
             prefixInput,
             caseDigitsInput,
+            startCaseIndexInput,
             outputDirInput,
             captureDelayInput,
             hideOverlayCheck,
@@ -102,6 +105,7 @@ class MainActivity : Activity() {
         val config = configRepository.load()
         prefixInput.setText(config.prefix)
         caseDigitsInput.setText(config.caseDigits.toString())
+        startCaseIndexInput.setText(config.startCaseIndex.toString())
         outputDirInput.setText(config.outputDir)
         captureDelayInput.setText(config.captureDelayMs.toString())
         hideOverlayCheck.isChecked = config.hideFloatingWindowBeforeCapture
@@ -111,6 +115,7 @@ class MainActivity : Activity() {
         val config = CaseShotConfig(
             prefix = prefixInput.text.toString(),
             caseDigits = caseDigitsInput.text.toString().toIntOrNull() ?: 4,
+            startCaseIndex = startCaseIndexInput.text.toString().toIntOrNull() ?: 1,
             outputDir = outputDirInput.text.toString(),
             captureDelayMs = captureDelayInput.text.toString().toLongOrNull() ?: 300L,
             hideFloatingWindowBeforeCapture = hideOverlayCheck.isChecked
@@ -132,12 +137,17 @@ class MainActivity : Activity() {
     }
 
     private fun startCaptureFlow() {
-        saveConfigFromUi()
+        val config = saveConfigFromUi()
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
             openOverlaySettings()
             return
         }
+        // Reset state to start case index
+        val currentState = stateRepository.load(config.prefix)
+        val resetState = StateRepository.resetToStartCase(currentState, config.prefix, config.startCaseIndex)
+        stateRepository.save(resetState, config.prefix)
+        refreshPreview()
         startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_CAPTURE)
     }
 

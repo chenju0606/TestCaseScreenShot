@@ -32,6 +32,13 @@ class StateRepository(private val context: Context) {
                 shotIndex = state.shotIndex.coerceAtLeast(0)
             )
 
+        fun resetToStartCase(state: CaseShotState, configPrefix: String, startCaseIndex: Int): CaseShotState =
+            state.copy(
+                prefix = configPrefix.trim(),
+                caseIndex = startCaseIndex.coerceAtLeast(1),
+                shotIndex = 0
+            )
+
         fun afterCaptureSuccess(state: CaseShotState): CaseShotState =
             state.copy(
                 caseIndex = state.caseIndex.coerceAtLeast(1),
