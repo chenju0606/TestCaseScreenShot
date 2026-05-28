@@ -60,7 +60,34 @@ class CaptureService : Service() {
     }
 
     private fun captureCurrentScreen() {
-        Toast.makeText(this, "截屏引擎将在下一任务接入", Toast.LENGTH_SHORT).show()
+        val projection = mediaProjection
+        if (projection == null) {
+            Toast.makeText(this, "未获得截屏权限", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val config = configRepository.load()
+        val current = stateRepository.load(config.prefix)
+        val filename = namingService.buildFilename(current.prefix, current.caseIndex, current.shotIndex, config.caseDigits)
+        val outputDir = fileStore.resolveOutputDir(this, config)
+
+        try {
+            if (config.hideFloatingWindowBeforeCapture) {
+                overlayController?.hideForCapture()
+                Thread.sleep(config.captureDelayMs)
+            }
+            val pngBytes = ScreenCaptureEngine(this).capturePng(projection)
+            val target = fileStore.writePng(outputDir, filename, pngBytes)
+            val next = StateRepository.afterCaptureSuccess(current)
+            stateRepository.save(next, config.prefix)
+            Toast.makeText(this, "已保存: ${target.name}", Toast.LENGTH_SHORT).show()
+        } catch (error: Exception) {
+            Toast.makeText(this, "截图失败，状态未推进: ${error.message}", Toast.LENGTH_LONG).show()
+        } finally {
+            if (config.hideFloatingWindowBeforeCapture) {
+                overlayController?.restoreAfterCapture()
+            }
+        }
     }
 
     private fun markDone() {
