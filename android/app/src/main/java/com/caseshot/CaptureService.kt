@@ -12,11 +12,14 @@ import android.os.IBinder
 import android.widget.Toast
 
 class CaptureService : Service() {
+
     private lateinit var configRepository: ConfigRepository
     private lateinit var stateRepository: StateRepository
     private val namingService = NamingService()
     private val fileStore = FileStore()
+
     private var overlayController: OverlayController? = null
+    private var captureEngine: ScreenCaptureEngine? = null
     private var mediaProjection: MediaProjection? = null
 
     override fun onCreate() {
@@ -28,14 +31,31 @@ class CaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
+
         if (intent?.hasExtra(EXTRA_RESULT_CODE) == true) {
             val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
-            val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
-            if (resultData != null) {
+            val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(EXTRA_RESULT_DATA)
+            }
+
+            if (resultData != null && mediaProjection == null) {
                 val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                mediaProjection = manager.getMediaProjection(resultCode, resultData)
+                val projection = manager.getMediaProjection(resultCode, resultData)
+
+                if (projection != null) {
+                    mediaProjection = projection
+                    initCaptureEngine(projection)
+                } else {
+                    Toast.makeText(this, "无法获取截屏权限", Toast.LENGTH_SHORT).show()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
             }
         }
+
         ensureOverlay()
         return START_STICKY
     }
@@ -43,11 +63,30 @@ class CaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        releaseResources()
+        super.onDestroy()
+    }
+
+    private fun initCaptureEngine(projection: MediaProjection) {
+        try {
+            captureEngine = ScreenCaptureEngine(this).also {
+                it.start(projection)
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "初始化截屏引擎失败: ${e.message}", Toast.LENGTH_LONG).show()
+            captureEngine = null
+        }
+    }
+
+    private fun releaseResources() {
+        captureEngine?.stop()
+        captureEngine = null
+
         overlayController?.remove()
         overlayController = null
+
         mediaProjection?.stop()
         mediaProjection = null
-        super.onDestroy()
     }
 
     private fun ensureOverlay() {
@@ -60,29 +99,37 @@ class CaptureService : Service() {
     }
 
     private fun captureCurrentScreen() {
-        val projection = mediaProjection
-        if (projection == null) {
-            Toast.makeText(this, "未获得截屏权限", Toast.LENGTH_SHORT).show()
+        val engine = captureEngine
+        if (engine == null) {
+            Toast.makeText(this, "截屏引擎未初始化", Toast.LENGTH_SHORT).show()
             return
         }
 
         val config = configRepository.load()
         val current = stateRepository.load(config.prefix)
-        val filename = namingService.buildFilename(current.prefix, current.caseIndex, current.shotIndex, config.caseDigits)
+        val filename = namingService.buildFilename(
+            current.prefix, current.caseIndex, current.shotIndex, config.caseDigits
+        )
         val outputDir = fileStore.resolveOutputDir(this, config)
 
         try {
             if (config.hideFloatingWindowBeforeCapture) {
                 overlayController?.hideForCapture()
-                Thread.sleep(config.captureDelayMs)
+                if (config.captureDelayMs > 0) {
+                    Thread.sleep(config.captureDelayMs)
+                }
             }
-            val pngBytes = ScreenCaptureEngine(this).capturePng(projection)
+
+            val pngBytes = engine.capture(timeoutMs = 5000)
             val target = fileStore.writePng(outputDir, filename, pngBytes)
             val next = StateRepository.afterCaptureSuccess(current)
             stateRepository.save(next, config.prefix)
+
             Toast.makeText(this, "已保存: ${target.name}", Toast.LENGTH_SHORT).show()
-        } catch (error: Exception) {
-            Toast.makeText(this, "截图失败，状态未推进: ${error.message}", Toast.LENGTH_LONG).show()
+        } catch (e: IllegalStateException) {
+            Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
         } finally {
             if (config.hideFloatingWindowBeforeCapture) {
                 overlayController?.restoreAfterCapture()
@@ -95,7 +142,11 @@ class CaptureService : Service() {
         val current = stateRepository.load(config.prefix)
         val next = StateRepository.nextCase(current)
         stateRepository.save(next, config.prefix)
-        Toast.makeText(this, "进入用例 ${namingService.buildCaseId(next.prefix, next.caseIndex, config.caseDigits)}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            this,
+            "进入用例 ${namingService.buildCaseId(next.prefix, next.caseIndex, config.caseDigits)}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun createNotificationChannel() {
@@ -114,7 +165,7 @@ class CaptureService : Service() {
         }
         return builder
             .setContentTitle("CaseShot 运行中")
-            .setContentText("悬浮窗已开启")
+            .setContentText("悬浮窗已开启，可连续截图")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build()
     }
