@@ -19,7 +19,9 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_CODE = "com.caseshot.RESULT_CODE"
         const val EXTRA_RESULT_DATA = "com.caseshot.RESULT_DATA"
         private const val CHANNEL_ID = "caseshot_capture"
+        private const val CHANNEL_RESULT_ID = "caseshot_result"
         private const val NOTIFICATION_ID = 49
+        private const val RESULT_NOTIFICATION_ID = 100
     }
 
     private lateinit var configRepository: ConfigRepository
@@ -30,13 +32,14 @@ class CaptureService : Service() {
     private var overlayController: OverlayController? = null
     private var captureEngine: ScreenCaptureEngine? = null
     private var mediaProjection: MediaProjection? = null
+    private var resultNotificationId = RESULT_NOTIFICATION_ID
 
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate")
         configRepository = ConfigRepository(this)
         stateRepository = StateRepository(this)
-        createNotificationChannel()
+        createNotificationChannels()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -145,13 +148,13 @@ class CaptureService : Service() {
             val next = StateRepository.afterCaptureSuccess(current)
             stateRepository.save(next, config.prefix)
 
-            Toast.makeText(this, "已保存: ${target.name}", Toast.LENGTH_SHORT).show()
+            sendResultNotification("截图已保存", "${target.name} - ${target.absolutePath}")
         } catch (e: IllegalStateException) {
             Log.e(TAG, "Capture failed", e)
-            Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
+            sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
         } catch (e: Exception) {
             Log.e(TAG, "Capture failed", e)
-            Toast.makeText(this, "截图失败: ${e.message}", Toast.LENGTH_LONG).show()
+            sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
         } finally {
             if (config.hideFloatingWindowBeforeCapture) {
                 overlayController?.restoreAfterCapture()
@@ -164,17 +167,29 @@ class CaptureService : Service() {
         val current = stateRepository.load(config.prefix)
         val next = StateRepository.nextCase(current)
         stateRepository.save(next, config.prefix)
-        Toast.makeText(
-            this,
-            "进入用例 ${namingService.buildCaseId(next.prefix, next.caseIndex, config.caseDigits)}",
-            Toast.LENGTH_SHORT
-        ).show()
+        
+        val caseId = namingService.buildCaseId(next.prefix, next.caseIndex, config.caseDigits)
+        sendResultNotification("用例切换", "已进入用例 $caseId")
     }
 
-    private fun createNotificationChannel() {
+    private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "CaseShot", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            val manager = getSystemService(NotificationManager::class.java)
+            
+            val captureChannel = NotificationChannel(
+                CHANNEL_ID, "CaseShot 服务", NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "CaseShot 截屏服务运行通知"
+            }
+            manager.createNotificationChannel(captureChannel)
+
+            val resultChannel = NotificationChannel(
+                CHANNEL_RESULT_ID, "CaseShot 结果", NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "截图完成和用例切换通知"
+                enableVibration(true)
+            }
+            manager.createNotificationChannel(resultChannel)
         }
     }
 
@@ -190,5 +205,28 @@ class CaptureService : Service() {
             .setContentText("悬浮窗已开启，可连续截图")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .build()
+    }
+
+    private fun sendResultNotification(title: String, message: String, isError: Boolean = false) {
+        val channelId = if (isError) CHANNEL_ID else CHANNEL_RESULT_ID
+        val id = resultNotificationId++
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, channelId)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        val notification = builder
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(if (isError) android.R.drawable.ic_dialog_alert else android.R.drawable.ic_menu_camera)
+            .setAutoCancel(true)
+            .setStyle(Notification.BigTextStyle().bigText(message))
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(id, notification)
     }
 }
