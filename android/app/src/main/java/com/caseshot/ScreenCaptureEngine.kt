@@ -13,16 +13,16 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import java.io.ByteArrayOutputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 class ScreenCaptureEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "ScreenCaptureEngine"
         private const val WARMUP_TIMEOUT_MS = 5000L
-        private const val CAPTURE_TIMEOUT_MS = 5000L
     }
 
     private var imageReader: ImageReader? = null
@@ -33,15 +33,12 @@ class ScreenCaptureEngine(private val context: Context) {
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
 
+    private val bitmapLock = ReentrantReadWriteLock()
     @Volatile
-    private var latestImage: Image? = null
-    private val imageLock = Object()
+    private var latestBitmap: Bitmap? = null
 
     private val isCapturing = AtomicBoolean(false)
     private val isInitialized = AtomicBoolean(false)
-    private val warmupLatch = CountDownLatch(1)
-    @Volatile
-    private var captureLatch = CountDownLatch(1)
 
     private var screenWidth = 0
     private var screenHeight = 0
@@ -76,24 +73,7 @@ class ScreenCaptureEngine(private val context: Context) {
                 PixelFormat.RGBA_8888, 3
             )
             reader.setOnImageAvailableListener({ r ->
-                try {
-                    val image = r?.acquireLatestImage() ?: return@setOnImageAvailableListener
-
-                    if (warmupLatch.count > 0) {
-                        image.close()
-                        warmupLatch.countDown()
-                        Log.d(TAG, "Warmup frame received")
-                        return@setOnImageAvailableListener
-                    }
-
-                    synchronized(imageLock) {
-                        latestImage?.close()
-                        latestImage = image
-                    }
-                    captureLatch.countDown()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in onImageAvailable", e)
-                }
+                handleImageAvailable(r)
             }, captureHandler)
             imageReader = reader
 
@@ -117,12 +97,9 @@ class ScreenCaptureEngine(private val context: Context) {
                 throw IllegalStateException("Failed to create VirtualDisplay")
             }
             virtualDisplay = display
-            Log.d(TAG, "VirtualDisplay created, waiting for warmup...")
+            Log.d(TAG, "VirtualDisplay created, warming up...")
 
-            val warmupOk = warmupLatch.await(WARMUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            if (!warmupOk) {
-                Log.w(TAG, "Warmup timeout, proceeding anyway")
-            }
+            Thread.sleep(WARMUP_TIMEOUT_MS)
 
             Log.d(TAG, "ScreenCaptureEngine started successfully")
         } catch (e: Exception) {
@@ -132,7 +109,31 @@ class ScreenCaptureEngine(private val context: Context) {
         }
     }
 
-    fun capture(timeoutMs: Long = CAPTURE_TIMEOUT_MS): ByteArray {
+    private fun handleImageAvailable(reader: ImageReader?) {
+        try {
+            while (true) {
+                val image = reader?.acquireLatestImage() ?: break
+                try {
+                    val bitmap = imageToBitmap(image)
+                    if (bitmap != null) {
+                        bitmapLock.write {
+                            val old = latestBitmap
+                            latestBitmap = bitmap
+                            old?.recycle()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error converting image to bitmap", e)
+                } finally {
+                    image.close()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in handleImageAvailable", e)
+        }
+    }
+
+    fun capture(): ByteArray {
         if (!isInitialized.get()) {
             throw IllegalStateException("ScreenCaptureEngine not initialized. Call start() first.")
         }
@@ -145,23 +146,17 @@ class ScreenCaptureEngine(private val context: Context) {
         }
 
         try {
-            captureLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            val bitmap = bitmapLock.read { latestBitmap }
+                ?: throw IllegalStateException("No bitmap available yet. Please wait a moment after starting.")
 
-            val image = synchronized(imageLock) {
-                val img = latestImage
-                latestImage = null
-                img
-            } ?: throw IllegalStateException("No image available after timeout")
-
-            captureLatch = CountDownLatch(1)
+            val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+                ?: throw IllegalStateException("Failed to copy bitmap")
 
             return try {
-                imageToPngBytes(image)
+                bitmapToPngBytes(copy)
             } finally {
-                image.close()
+                copy.recycle()
             }
-        } catch (e: InterruptedException) {
-            throw IllegalStateException("Capture interrupted")
         } finally {
             isCapturing.set(false)
         }
@@ -193,43 +188,48 @@ class ScreenCaptureEngine(private val context: Context) {
         captureThread = null
         captureHandler = null
 
-        synchronized(imageLock) {
-            latestImage?.close()
-            latestImage = null
+        bitmapLock.write {
+            latestBitmap?.recycle()
+            latestBitmap = null
         }
 
         mediaProjection = null
         projectionStopped = false
     }
 
-    private fun imageToPngBytes(image: Image): ByteArray {
-        val plane = image.planes[0]
-        val buffer = plane.buffer
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * screenWidth
+    private fun imageToBitmap(image: Image): Bitmap? {
+        try {
+            val plane = image.planes[0]
+            val buffer = plane.buffer
+            val pixelStride = plane.pixelStride
+            val rowStride = plane.rowStride
+            val rowPadding = rowStride - pixelStride * screenWidth
 
-        val bitmap = Bitmap.createBitmap(
-            screenWidth + rowPadding / pixelStride,
-            screenHeight,
-            Bitmap.Config.ARGB_8888
-        )
-        bitmap.copyPixelsFromBuffer(buffer)
+            val bitmap = Bitmap.createBitmap(
+                screenWidth + rowPadding / pixelStride,
+                screenHeight,
+                Bitmap.Config.ARGB_8888
+            )
+            bitmap.copyPixelsFromBuffer(buffer)
 
-        val cropped = if (bitmap.width != screenWidth || bitmap.height != screenHeight) {
-            Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight).also {
-                if (it !== bitmap) bitmap.recycle()
+            return if (bitmap.width != screenWidth || bitmap.height != screenHeight) {
+                val cropped = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+                if (cropped !== bitmap) {
+                    bitmap.recycle()
+                }
+                cropped
+            } else {
+                bitmap
             }
-        } else {
-            bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in imageToBitmap", e)
+            return null
         }
+    }
 
-        return try {
-            val output = ByteArrayOutputStream(1024 * 1024)
-            cropped.compress(Bitmap.CompressFormat.PNG, 100, output)
-            output.toByteArray()
-        } finally {
-            cropped.recycle()
-        }
+    private fun bitmapToPngBytes(bitmap: Bitmap): ByteArray {
+        val output = ByteArrayOutputStream(1024 * 1024)
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+        return output.toByteArray()
     }
 }

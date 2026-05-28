@@ -143,7 +143,7 @@ class CaptureService : Service() {
                 }
             }
 
-            val pngBytes = engine.capture(timeoutMs = 5000)
+            val pngBytes = engine.capture()
             val target = fileStore.writePng(outputDir, filename, pngBytes)
             val next = StateRepository.afterCaptureSuccess(current)
             stateRepository.save(next, config.prefix)
