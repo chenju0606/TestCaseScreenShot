@@ -10,6 +10,8 @@ import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -321,8 +323,12 @@ class MainActivity : Activity() {
         } else if (requestCode == REQUEST_DIRECTORY && resultCode == RESULT_OK && data != null) {
             val uri = data.data
             if (uri != null) {
-                val path = uri.path.orEmpty()
-                outputDirInput.setText(path)
+                val path = getRealPathFromDocumentTree(uri)
+                if (path != null) {
+                    outputDirInput.setText(path)
+                } else {
+                    Toast.makeText(this, "无法解析目录路径", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -341,5 +347,28 @@ class MainActivity : Activity() {
     private fun restartService() {
         stopService(Intent(this, CaptureService::class.java))
         startCaptureFlow()
+    }
+
+    private fun getRealPathFromDocumentTree(uri: Uri): String? {
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        if (docId.isEmpty()) return null
+
+        val split = docId.split(":")
+        if (split.size < 2) return null
+
+        val volumeId = split[0]
+        val relativePath = split.subList(1, split.size).joinToString(":")
+
+        val basePath = when (volumeId) {
+            "primary" -> Environment.getExternalStorageDirectory().absolutePath
+            "external" -> Environment.getExternalStorageDirectory().absolutePath
+            else -> "/storage/$volumeId"
+        }
+
+        return if (relativePath.isNotEmpty()) {
+            "$basePath/$relativePath"
+        } else {
+            basePath
+        }
     }
 }
