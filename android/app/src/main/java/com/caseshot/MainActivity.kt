@@ -1,6 +1,7 @@
 package com.caseshot
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -24,6 +25,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_CAPTURE = 1001
+        private const val REQUEST_DIRECTORY = 1002
         private const val SKY_BLUE = "#2196F3"
         private const val SKY_BLUE_DARK = "#1976D2"
         private const val SKY_BLUE_LIGHT = "#BBDEFB"
@@ -106,8 +108,42 @@ class MainActivity : Activity() {
         prefixInput = createStyledEditText("前缀，可留空，例如 049")
         caseDigitsInput = createStyledEditText("用例编号位数", true)
         startCaseIndexInput = createStyledEditText("起始用例编号", true)
-        outputDirInput = createStyledEditText("保存目录，留空使用应用目录")
         captureDelayInput = createStyledEditText("截屏延迟毫秒", true)
+
+        val outputDirLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        outputDirInput = createStyledEditText("保存目录，留空使用应用目录").apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        }
+
+        val dirPickerButton = Button(this).apply {
+            text = "选择"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(32, 20, 32, 20)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor(SKY_BLUE))
+                cornerRadius = 12f
+            }
+            setOnClickListener { openDirectoryPicker() }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(16, 0, 0, 0)
+            }
+        }
+
+        outputDirLayout.addView(outputDirInput)
+        outputDirLayout.addView(dirPickerButton)
 
         hideOverlayCheck = CheckBox(this).apply {
             text = "截图前隐藏悬浮窗"
@@ -129,10 +165,14 @@ class MainActivity : Activity() {
         }
 
         buttonsLayout.addView(createStyledButton("打开悬浮窗权限", false) { openOverlaySettings() })
+        buttonsLayout.addView(createStyledButton("打开通知权限", false) { openNotificationSettings() })
         buttonsLayout.addView(createStyledButton("保存配置", false) {
-            saveConfigFromUi()
+            val config = saveConfigFromUi()
             refreshPreview()
             Toast.makeText(this@MainActivity, "配置已保存", Toast.LENGTH_SHORT).show()
+            if (isServiceRunning()) {
+                restartService()
+            }
         })
         buttonsLayout.addView(createStyledButton("开始服务", true) { startCaptureFlow() })
         buttonsLayout.addView(createStyledButton("停止服务", false) {
@@ -148,7 +188,7 @@ class MainActivity : Activity() {
             prefixInput,
             caseDigitsInput,
             startCaseIndexInput,
-            outputDirInput,
+            outputDirLayout,
             captureDelayInput,
             hideOverlayCheck,
             buttonsLayout
@@ -243,6 +283,18 @@ class MainActivity : Activity() {
         startActivity(intent)
     }
 
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        startActivity(intent)
+    }
+
+    private fun openDirectoryPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        startActivityForResult(intent, REQUEST_DIRECTORY)
+    }
+
     private fun startCaptureFlow() {
         val config = saveConfigFromUi()
         if (!Settings.canDrawOverlays(this)) {
@@ -266,6 +318,28 @@ class MainActivity : Activity() {
             startForegroundService(intent)
         } else if (requestCode == REQUEST_CAPTURE) {
             Toast.makeText(this, "未获得截屏权限", Toast.LENGTH_SHORT).show()
+        } else if (requestCode == REQUEST_DIRECTORY && resultCode == RESULT_OK && data != null) {
+            val uri = data.data
+            if (uri != null) {
+                val path = uri.path.orEmpty()
+                outputDirInput.setText(path)
+            }
         }
+    }
+
+    private fun isServiceRunning(): Boolean {
+        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        @Suppress("DEPRECATION")
+        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+            if (CaptureService::class.java.name == service.service.className) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun restartService() {
+        stopService(Intent(this, CaptureService::class.java))
+        startCaptureFlow()
     }
 }

@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
+import java.io.File
 
 class CaptureService : Service() {
 
@@ -138,20 +139,33 @@ class CaptureService : Service() {
         try {
             if (config.hideFloatingWindowBeforeCapture) {
                 overlayController?.hideForCapture()
+                Thread.sleep(50)
                 if (config.captureDelayMs > 0) {
                     Thread.sleep(config.captureDelayMs)
                 }
             }
 
             val pngBytes = engine.capture()
-            val target = fileStore.writePng(outputDir, filename, pngBytes)
-            val next = StateRepository.afterCaptureSuccess(current)
-            stateRepository.save(next, config.prefix)
+            val result = fileStore.writePngWithConflictResolution(
+                outputDir, filename, pngBytes, config.conflictResolution
+            )
 
-            sendResultNotification("截图已保存", "${target.name} - ${target.absolutePath}")
-        } catch (e: IllegalStateException) {
-            Log.e(TAG, "Capture failed", e)
-            sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
+            when {
+                result.success && !result.skipped -> {
+                    val next = StateRepository.afterCaptureSuccess(current)
+                    stateRepository.save(next, config.prefix)
+                    sendResultNotification("截图已保存", "${result.file?.name} - ${result.file?.absolutePath}")
+                }
+                result.success && result.skipped -> {
+                    sendResultNotification("截图已跳过", "文件已存在: $filename")
+                }
+                result.error?.startsWith("CONFLICT:") == true -> {
+                    showConflictNotification(result.file, pngBytes, current, config)
+                }
+                else -> {
+                    sendResultNotification("截图失败", result.error ?: "未知错误", isError = true)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Capture failed", e)
             sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
@@ -160,6 +174,54 @@ class CaptureService : Service() {
                 overlayController?.restoreAfterCapture()
             }
         }
+    }
+
+    private fun showConflictNotification(
+        targetFile: File?,
+        pngBytes: ByteArray,
+        current: CaseShotState,
+        config: CaseShotConfig
+    ) {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+
+        val skipIntent = Intent(this, ConflictActionReceiver::class.java).apply {
+            action = "ACTION_SKIP"
+            putExtra("CASE_INDEX", current.caseIndex)
+            putExtra("SHOT_INDEX", current.shotIndex)
+            putExtra("PREFIX", current.prefix)
+        }
+        val skipPendingIntent = android.app.PendingIntent.getBroadcast(
+            this, current.shotIndex * 2, skipIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val overwriteIntent = Intent(this, ConflictActionReceiver::class.java).apply {
+            action = "ACTION_OVERWRITE"
+            putExtra("CASE_INDEX", current.caseIndex)
+            putExtra("SHOT_INDEX", current.shotIndex)
+            putExtra("PREFIX", current.prefix)
+            putExtra("OUTPUT_DIR", config.outputDir)
+            putExtra("FILENAME", targetFile?.name)
+        }
+        val overwritePendingIntent = android.app.PendingIntent.getBroadcast(
+            this, current.shotIndex * 2 + 1, overwriteIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = Notification.Builder(this, CHANNEL_RESULT_ID)
+            .setContentTitle("文件冲突")
+            .setContentText("${targetFile?.name} 已存在")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .addAction(Notification.Action.Builder(
+                null, "跳过", skipPendingIntent
+            ).build())
+            .addAction(Notification.Action.Builder(
+                null, "覆盖", overwritePendingIntent
+            ).build())
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(RESULT_NOTIFICATION_ID + current.shotIndex, notification)
     }
 
     private fun markDone() {

@@ -1,5 +1,11 @@
 package com.caseshot
 
+enum class ConflictResolution {
+    SKIP,
+    OVERWRITE,
+    ASK
+}
+
 data class CaseShotConfig(
     val prefix: String = "",
     val caseDigits: Int = 3,
@@ -9,7 +15,8 @@ data class CaseShotConfig(
     val hideFloatingWindowBeforeCapture: Boolean = true,
     val imageFormat: String = "png",
     val enableSmb: Boolean = false,
-    val smbUrl: String = ""
+    val smbUrl: String = "",
+    val conflictResolution: ConflictResolution = ConflictResolution.ASK
 )
 
 data class CaseShotState(

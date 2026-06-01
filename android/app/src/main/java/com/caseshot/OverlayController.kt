@@ -143,11 +143,47 @@ class OverlayController(
     }
 
     fun hideForCapture() {
-        view?.visibility = View.INVISIBLE
+        view?.let {
+            it.visibility = View.INVISIBLE
+            try {
+                windowManager.updateViewLayout(it, params)
+            } catch (e: Exception) {
+                // Ignore update errors
+            }
+        }
     }
 
     fun restoreAfterCapture() {
-        view?.visibility = View.VISIBLE
+        view?.let {
+            it.visibility = View.VISIBLE
+            try {
+                windowManager.updateViewLayout(it, params)
+            } catch (e: Exception) {
+                // Ignore update errors
+            }
+        }
+    }
+
+    fun temporarilyRemoveForCapture(): Boolean {
+        view?.let {
+            try {
+                windowManager.removeView(it)
+                return true
+            } catch (e: Exception) {
+                // Ignore remove errors
+            }
+        }
+        return false
+    }
+
+    fun restoreAfterCaptureRemoval() {
+        view?.let {
+            try {
+                windowManager.addView(it, params)
+            } catch (e: Exception) {
+                // Ignore add errors
+            }
+        }
     }
 
     fun remove() {

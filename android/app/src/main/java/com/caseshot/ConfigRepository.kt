@@ -15,7 +15,11 @@ class ConfigRepository(private val context: Context) {
             hideFloatingWindowBeforeCapture = prefs.getBoolean("hideFloatingWindowBeforeCapture", true),
             imageFormat = prefs.getString("imageFormat", "png").orEmpty(),
             enableSmb = prefs.getBoolean("enableSmb", false),
-            smbUrl = prefs.getString("smbUrl", "").orEmpty()
+            smbUrl = prefs.getString("smbUrl", "").orEmpty(),
+            conflictResolution = ConflictResolution.valueOf(
+                prefs.getString("conflictResolution", ConflictResolution.ASK.name).orEmpty()
+                    .ifEmpty { ConflictResolution.ASK.name }
+            )
         )
     )
 
@@ -31,6 +35,7 @@ class ConfigRepository(private val context: Context) {
             .putString("imageFormat", normalized.imageFormat)
             .putBoolean("enableSmb", normalized.enableSmb)
             .putString("smbUrl", normalized.smbUrl)
+            .putString("conflictResolution", normalized.conflictResolution.name)
             .apply()
         return normalized
     }

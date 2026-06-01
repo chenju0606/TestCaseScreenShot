@@ -25,5 +25,9 @@
             android:name=".CaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <receiver
+            android:name=".ConflictActionReceiver"
+            android:exported="false" />
     </application>
 </manifest>
