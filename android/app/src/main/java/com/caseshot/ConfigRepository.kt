@@ -8,7 +8,7 @@ class ConfigRepository(private val context: Context) {
     fun load(): CaseShotConfig = normalize(
         CaseShotConfig(
             prefix = prefs.getString("prefix", "").orEmpty(),
-            caseDigits = prefs.getInt("caseDigits", 4),
+            caseDigits = prefs.getInt("caseDigits", 3),
             startCaseIndex = prefs.getInt("startCaseIndex", 1),
             outputDir = prefs.getString("outputDir", "").orEmpty(),
             captureDelayMs = prefs.getLong("captureDelayMs", 300L),

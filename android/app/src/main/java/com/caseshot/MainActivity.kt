@@ -105,9 +105,9 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 24)
         }
 
-        prefixInput = createStyledEditText("前缀，可留空，例如 049")
+        prefixInput = createStyledEditText("用例前缀，输入样例：可留空 / ZYYH-US-88888-")
         caseDigitsInput = createStyledEditText("用例编号位数", true)
-        startCaseIndexInput = createStyledEditText("起始用例编号", true)
+        startCaseIndexInput = createStyledEditText("起始用例编号，输入样例：1，不带前面的0", true)
         captureDelayInput = createStyledEditText("截屏延迟毫秒", true)
 
         val outputDirLayout = LinearLayout(this).apply {

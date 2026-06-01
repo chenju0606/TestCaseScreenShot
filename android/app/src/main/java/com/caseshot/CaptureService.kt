@@ -157,10 +157,12 @@ class CaptureService : Service() {
                     sendResultNotification("截图已保存", "${result.file?.name} - ${result.file?.absolutePath}")
                 }
                 result.success && result.skipped -> {
+                    val next = StateRepository.afterCaptureSuccess(current)
+                    stateRepository.save(next, config.prefix)
                     sendResultNotification("截图已跳过", "文件已存在: $filename")
                 }
                 result.error?.startsWith("CONFLICT:") == true -> {
-                    showConflictNotification(result.file, pngBytes, current, config)
+                    showConflictNotification(outputDir, filename, pngBytes, current, config)
                 }
                 else -> {
                     sendResultNotification("截图失败", result.error ?: "未知错误", isError = true)
@@ -177,18 +179,26 @@ class CaptureService : Service() {
     }
 
     private fun showConflictNotification(
-        targetFile: File?,
+        outputDir: File,
+        filename: String,
         pngBytes: ByteArray,
         current: CaseShotState,
         config: CaseShotConfig
     ) {
         val notificationManager = getSystemService(NotificationManager::class.java)
 
+        val tempFile = File(cacheDir, "conflict_${current.caseIndex}_${current.shotIndex}.png")
+        tempFile.writeBytes(pngBytes)
+
+        val targetFile = File(outputDir, filename)
+
         val skipIntent = Intent(this, ConflictActionReceiver::class.java).apply {
-            action = "ACTION_SKIP"
-            putExtra("CASE_INDEX", current.caseIndex)
-            putExtra("SHOT_INDEX", current.shotIndex)
-            putExtra("PREFIX", current.prefix)
+            action = ConflictActionReceiver.ACTION_SKIP
+            putExtra(ConflictActionReceiver.EXTRA_TEMP_PATH, tempFile.absolutePath)
+            putExtra(ConflictActionReceiver.EXTRA_CASE_INDEX, current.caseIndex)
+            putExtra(ConflictActionReceiver.EXTRA_SHOT_INDEX, current.shotIndex)
+            putExtra(ConflictActionReceiver.EXTRA_PREFIX, current.prefix)
+            putExtra(ConflictActionReceiver.EXTRA_CONFIG_PREFIX, config.prefix)
         }
         val skipPendingIntent = android.app.PendingIntent.getBroadcast(
             this, current.shotIndex * 2, skipIntent,
@@ -196,12 +206,13 @@ class CaptureService : Service() {
         )
 
         val overwriteIntent = Intent(this, ConflictActionReceiver::class.java).apply {
-            action = "ACTION_OVERWRITE"
-            putExtra("CASE_INDEX", current.caseIndex)
-            putExtra("SHOT_INDEX", current.shotIndex)
-            putExtra("PREFIX", current.prefix)
-            putExtra("OUTPUT_DIR", config.outputDir)
-            putExtra("FILENAME", targetFile?.name)
+            action = ConflictActionReceiver.ACTION_OVERWRITE
+            putExtra(ConflictActionReceiver.EXTRA_TEMP_PATH, tempFile.absolutePath)
+            putExtra(ConflictActionReceiver.EXTRA_TARGET_PATH, targetFile.absolutePath)
+            putExtra(ConflictActionReceiver.EXTRA_CASE_INDEX, current.caseIndex)
+            putExtra(ConflictActionReceiver.EXTRA_SHOT_INDEX, current.shotIndex)
+            putExtra(ConflictActionReceiver.EXTRA_PREFIX, current.prefix)
+            putExtra(ConflictActionReceiver.EXTRA_CONFIG_PREFIX, config.prefix)
         }
         val overwritePendingIntent = android.app.PendingIntent.getBroadcast(
             this, current.shotIndex * 2 + 1, overwriteIntent,
@@ -210,7 +221,7 @@ class CaptureService : Service() {
 
         val notification = Notification.Builder(this, CHANNEL_RESULT_ID)
             .setContentTitle("文件冲突")
-            .setContentText("${targetFile?.name} 已存在")
+            .setContentText("$filename 已存在")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .addAction(Notification.Action.Builder(
                 null, "跳过", skipPendingIntent
