@@ -2,6 +2,7 @@
 android/.gradle/
 android/app/build/
 android/build/
+*.apk
 
 # IDE files
 .idea/
