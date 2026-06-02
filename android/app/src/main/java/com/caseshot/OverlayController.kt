@@ -24,9 +24,12 @@ class OverlayController(
         private const val OVERLAY_BG = "#E3F2FD"
         private const val BUTTON_SIZE_PX = 140
         private const val BUTTON_CORNER_PX = 70f
-        private const val CONTAINER_CORNER_PX = 50f
+        private const val CONTAINER_CORNER_PX = 80f
         private const val RIGHT_MARGIN_PX = 24
         private const val BELOW_CENTER_OFFSET_PX = 300
+        private const val CONTAINER_PADDING_PX = 12
+        private const val BUTTON_GAP_PX = 12
+        private const val STROKE_PX = 2
     }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -53,13 +56,24 @@ class OverlayController(
     fun show() {
         if (view != null) return
 
+        val displayMetrics = context.resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
+
+        val containerWidth =
+            BUTTON_SIZE_PX + CONTAINER_PADDING_PX * 2 + STROKE_PX * 2
+        val containerHeight =
+            BUTTON_SIZE_PX * 2 + CONTAINER_PADDING_PX * 2 + BUTTON_GAP_PX + STROKE_PX * 2
+        val initialX = screenWidth - containerWidth - RIGHT_MARGIN_PX
+        val initialY = (screenHeight - containerHeight) / 2 + BELOW_CENTER_OFFSET_PX
+
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(12, 12, 12, 12)
+            setPadding(CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(OVERLAY_BG))
                 cornerRadius = CONTAINER_CORNER_PX
-                setStroke(2, Color.parseColor(SKY_BLUE))
+                setStroke(STROKE_PX, Color.parseColor(SKY_BLUE))
             }
         }
 
@@ -78,36 +92,36 @@ class OverlayController(
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            x = -RIGHT_MARGIN_PX
-            y = BELOW_CENTER_OFFSET_PX
+            gravity = Gravity.TOP or Gravity.START
+            x = initialX
+            y = initialY
         }
 
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
+        var touchStartLayoutX = 0
+        var touchStartLayoutY = 0
+        var touchStartRawX = 0f
+        var touchStartRawY = 0f
         var isDragging = false
 
         layout.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = layoutParams.x
-                    initialY = layoutParams.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
+                    touchStartLayoutX = layoutParams.x
+                    touchStartLayoutY = layoutParams.y
+                    touchStartRawX = event.rawX
+                    touchStartRawY = event.rawY
                     isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchX
-                    val dy = event.rawY - initialTouchY
+                    val dx = event.rawX - touchStartRawX
+                    val dy = event.rawY - touchStartRawY
                     if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
                         isDragging = true
                     }
                     if (isDragging) {
-                        layoutParams.x = initialX + dx.toInt()
-                        layoutParams.y = initialY + dy.toInt()
+                        layoutParams.x = touchStartLayoutX + dx.toInt()
+                        layoutParams.y = touchStartLayoutY + dy.toInt()
                         windowManager.updateViewLayout(layout, layoutParams)
                     }
                     true
