@@ -55,9 +55,20 @@ class ConflictActionReceiver : BroadcastReceiver() {
                 val tempFile = File(tempPath)
                 val targetFile = File(targetPath)
                 if (tempFile.exists()) {
-                    targetFile.parentFile?.mkdirs()
-                    tempFile.copyTo(targetFile, overwrite = true)
-                    tempFile.delete()
+                    try {
+                        targetFile.parentFile?.mkdirs()
+                        tempFile.inputStream().use { input ->
+                            targetFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        tempFile.delete()
+                        Log.d(TAG, "Overwrite succeeded: $targetPath")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Overwrite failed for $targetPath", e)
+                    }
+                } else {
+                    Log.w(TAG, "Temp file no longer exists: $tempPath")
                 }
                 val current = stateRepository.load(configPrefix)
                 val next = current.copy(
