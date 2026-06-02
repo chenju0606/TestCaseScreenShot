@@ -13,6 +13,8 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -22,7 +24,7 @@ class ScreenCaptureEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "ScreenCaptureEngine"
-        private const val WARMUP_TIMEOUT_MS = 5000L
+        private const val FIRST_FRAME_TIMEOUT_MS = 2000L
     }
 
     private var imageReader: ImageReader? = null
@@ -36,6 +38,7 @@ class ScreenCaptureEngine(private val context: Context) {
     private val bitmapLock = ReentrantReadWriteLock()
     @Volatile
     private var latestBitmap: Bitmap? = null
+    private var firstFrameLatch: CountDownLatch = CountDownLatch(1)
 
     private val isCapturing = AtomicBoolean(false)
     private val isInitialized = AtomicBoolean(false)
@@ -97,9 +100,7 @@ class ScreenCaptureEngine(private val context: Context) {
                 throw IllegalStateException("Failed to create VirtualDisplay")
             }
             virtualDisplay = display
-            Log.d(TAG, "VirtualDisplay created, warming up...")
-
-            Thread.sleep(WARMUP_TIMEOUT_MS)
+            Log.d(TAG, "VirtualDisplay created, waiting for first frame asynchronously")
 
             Log.d(TAG, "ScreenCaptureEngine started successfully")
         } catch (e: Exception) {
@@ -121,6 +122,7 @@ class ScreenCaptureEngine(private val context: Context) {
                             latestBitmap = bitmap
                             old?.recycle()
                         }
+                        firstFrameLatch.countDown()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error converting image to bitmap", e)
@@ -146,6 +148,10 @@ class ScreenCaptureEngine(private val context: Context) {
         }
 
         try {
+            if (!firstFrameLatch.await(FIRST_FRAME_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                throw IllegalStateException("No frame captured yet. Please wait a moment after starting.")
+            }
+
             val bitmap = bitmapLock.read { latestBitmap }
                 ?: throw IllegalStateException("No bitmap available yet. Please wait a moment after starting.")
 
@@ -192,6 +198,8 @@ class ScreenCaptureEngine(private val context: Context) {
             latestBitmap?.recycle()
             latestBitmap = null
         }
+
+        firstFrameLatch = CountDownLatch(1)
 
         mediaProjection = null
         projectionStopped = false
