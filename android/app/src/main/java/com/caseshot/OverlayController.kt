@@ -4,15 +4,14 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 
 class OverlayController(
@@ -22,13 +21,33 @@ class OverlayController(
 ) {
     companion object {
         private const val SKY_BLUE = "#2196F3"
-        private const val SKY_BLUE_DARK = "#1976D2"
         private const val OVERLAY_BG = "#E3F2FD"
+        private const val BUTTON_SIZE_PX = 140
+        private const val BUTTON_CORNER_PX = 28f
+        private const val CONTAINER_CORNER_PX = 32f
+        private const val RIGHT_MARGIN_PX = 24
+        private const val BELOW_CENTER_OFFSET_PX = 300
     }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var view: View? = null
     private var params: WindowManager.LayoutParams? = null
+
+    private fun createIconButton(iconRes: Int, onClick: () -> Unit): ImageButton {
+        return ImageButton(context).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(20, 20, 20, 20)
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                cornerRadius = BUTTON_CORNER_PX
+            }
+            setOnClickListener { onClick() }
+            layoutParams = LinearLayout.LayoutParams(BUTTON_SIZE_PX, BUTTON_SIZE_PX).apply {
+                setMargins(0, 0, 0, 12)
+            }
+        }
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
@@ -36,50 +55,16 @@ class OverlayController(
 
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
+            setPadding(12, 12, 12, 12)
             background = GradientDrawable().apply {
                 setColor(Color.parseColor(OVERLAY_BG))
-                cornerRadius = 20f
+                cornerRadius = CONTAINER_CORNER_PX
                 setStroke(2, Color.parseColor(SKY_BLUE))
             }
         }
 
-        layout.addView(Button(context).apply {
-            text = "截图"
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(32, 16, 32, 16)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(SKY_BLUE))
-                cornerRadius = 12f
-            }
-            setOnClickListener { onScreenshot() }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 12)
-            }
-        })
-
-        layout.addView(Button(context).apply {
-            text = "完成"
-            setTextColor(Color.parseColor(SKY_BLUE_DARK))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(32, 16, 32, 16)
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE)
-                cornerRadius = 12f
-                setStroke(2, Color.parseColor(SKY_BLUE))
-            }
-            setOnClickListener { onDone() }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        })
+        layout.addView(createIconButton(R.drawable.screenshot, onScreenshot))
+        layout.addView(createIconButton(R.drawable.arrow_circle_right, onDone))
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -93,9 +78,9 @@ class OverlayController(
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 220
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            x = -RIGHT_MARGIN_PX
+            y = BELOW_CENTER_OFFSET_PX
         }
 
         var initialX = 0
