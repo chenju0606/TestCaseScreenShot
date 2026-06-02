@@ -6,9 +6,13 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -36,7 +40,7 @@ class OverlayController(
     private var view: View? = null
     private var params: WindowManager.LayoutParams? = null
 
-    private fun createIconButton(iconRes: Int, onClick: () -> Unit): ImageButton {
+    private fun createIconButton(iconRes: Int): ImageButton {
         return ImageButton(context).apply {
             setImageResource(iconRes)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -45,11 +49,21 @@ class OverlayController(
                 setColor(Color.WHITE)
                 cornerRadius = BUTTON_CORNER_PX
             }
-            setOnClickListener { onClick() }
+            isClickable = false
+            isFocusable = false
             layoutParams = LinearLayout.LayoutParams(BUTTON_SIZE_PX, BUTTON_SIZE_PX).apply {
                 setMargins(0, 0, 0, 12)
             }
         }
+    }
+
+    private fun isWithinButton(rawX: Float, rawY: Float, button: ImageButton): Boolean {
+        val loc = IntArray(2)
+        button.getLocationOnScreen(loc)
+        val centerX = loc[0] + button.width / 2
+        val centerY = loc[1] + button.height / 2
+        return Math.abs(rawX - centerX) < button.width / 2 &&
+            Math.abs(rawY - centerY) < button.height / 2
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -77,8 +91,10 @@ class OverlayController(
             }
         }
 
-        layout.addView(createIconButton(R.drawable.screenshot, onScreenshot))
-        layout.addView(createIconButton(R.drawable.arrow_circle_right, onDone))
+        val screenshotButton = createIconButton(R.drawable.screenshot)
+        val doneButton = createIconButton(R.drawable.arrow_circle_right)
+        layout.addView(screenshotButton)
+        layout.addView(doneButton)
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -97,39 +113,57 @@ class OverlayController(
             y = initialY
         }
 
+        val handler = Handler(Looper.getMainLooper())
+        val longPressTimeout = ViewConfiguration.getLongPressTimeout().toLong()
+        val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
         var touchStartLayoutX = 0
         var touchStartLayoutY = 0
         var touchStartRawX = 0f
         var touchStartRawY = 0f
-        var isDragging = false
+        var isLongPressing = false
+        val longPressRunnable = Runnable {
+            isLongPressing = true
+            layout.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
 
         layout.setOnTouchListener { _, event ->
-            when (event.action) {
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     touchStartLayoutX = layoutParams.x
                     touchStartLayoutY = layoutParams.y
                     touchStartRawX = event.rawX
                     touchStartRawY = event.rawY
-                    isDragging = false
+                    isLongPressing = false
+                    handler.postDelayed(longPressRunnable, longPressTimeout)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchStartRawX
                     val dy = event.rawY - touchStartRawY
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-                        isDragging = true
-                    }
-                    if (isDragging) {
+                    if (isLongPressing) {
                         layoutParams.x = touchStartLayoutX + dx.toInt()
                         layoutParams.y = touchStartLayoutY + dy.toInt()
                         windowManager.updateViewLayout(layout, layoutParams)
+                    } else if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) {
+                        handler.removeCallbacks(longPressRunnable)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!isDragging) {
-                        layout.performClick()
+                    handler.removeCallbacks(longPressRunnable)
+                    if (isLongPressing) {
+                        isLongPressing = false
+                    } else if (isWithinButton(event.rawX, event.rawY, screenshotButton)) {
+                        onScreenshot()
+                    } else if (isWithinButton(event.rawX, event.rawY, doneButton)) {
+                        onDone()
                     }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(longPressRunnable)
+                    isLongPressing = false
                     true
                 }
                 else -> false
