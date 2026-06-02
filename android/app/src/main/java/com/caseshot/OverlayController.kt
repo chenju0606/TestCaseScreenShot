@@ -23,8 +23,8 @@ class OverlayController(
         private const val SKY_BLUE = "#2196F3"
         private const val OVERLAY_BG = "#E3F2FD"
         private const val BUTTON_SIZE_PX = 140
-        private const val BUTTON_CORNER_PX = 28f
-        private const val CONTAINER_CORNER_PX = 32f
+        private const val BUTTON_CORNER_PX = 70f
+        private const val CONTAINER_CORNER_PX = 50f
         private const val RIGHT_MARGIN_PX = 24
         private const val BELOW_CENTER_OFFSET_PX = 300
     }
