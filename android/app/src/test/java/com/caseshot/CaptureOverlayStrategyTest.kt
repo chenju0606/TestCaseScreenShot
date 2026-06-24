@@ -5,7 +5,7 @@ import org.junit.Test
 
 class CaptureOverlayStrategyTest {
     @Test
-    fun hidesOverlayAndUsesConfiguredDelayWhenHideBeforeCaptureIsEnabled() {
+    fun removesOverlayAndUsesConfiguredDelayWhenHideBeforeCaptureIsEnabled() {
         val config = CaseShotConfig(
             hideFloatingWindowBeforeCapture = true,
             captureDelayMs = 450L
@@ -13,7 +13,19 @@ class CaptureOverlayStrategyTest {
 
         val strategy = CaptureOverlayStrategy.from(config)
 
-        assertEquals(CaptureOverlayStrategy.HideForCapture(450L), strategy)
+        assertEquals(CaptureOverlayStrategy.RemoveForCapture(450L), strategy)
+    }
+
+    @Test
+    fun removeOverlayWaitsAtLeastSeveralFramesBeforeCapture() {
+        val config = CaseShotConfig(
+            hideFloatingWindowBeforeCapture = true,
+            captureDelayMs = 0L
+        )
+
+        val strategy = CaptureOverlayStrategy.from(config)
+
+        assertEquals(CaptureOverlayStrategy.RemoveForCapture(80L), strategy)
     }
 
     @Test

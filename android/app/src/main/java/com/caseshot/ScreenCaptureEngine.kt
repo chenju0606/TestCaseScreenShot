@@ -168,6 +168,27 @@ class ScreenCaptureEngine(private val context: Context) {
         }
     }
 
+    fun drainOldImages() {
+        val handler = captureHandler ?: return
+        val latch = CountDownLatch(1)
+        handler.post {
+            try {
+                while (true) {
+                    val image = imageReader?.acquireLatestImage() ?: break
+                    image.close()
+                }
+                bitmapLock.write {
+                    latestBitmap?.recycle()
+                    latestBitmap = null
+                }
+                firstFrameLatch = CountDownLatch(1)
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(500L, TimeUnit.MILLISECONDS)
+    }
+
     fun stop() {
         if (!isInitialized.getAndSet(false)) return
 

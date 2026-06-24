@@ -146,15 +146,15 @@ class CaptureService : Service() {
         val outputDir = fileStore.resolveOutputDir(this, config)
 
         val overlayStrategy = CaptureOverlayStrategy.from(config)
-        var overlayHidden = false
+        var overlayRemoved = false
 
         try {
-            if (overlayStrategy is CaptureOverlayStrategy.HideForCapture) {
-                overlayController?.hideForCapture()
-                overlayHidden = true
+            if (overlayStrategy is CaptureOverlayStrategy.RemoveForCapture) {
+                overlayRemoved = overlayController?.temporarilyRemoveForCapture() == true
                 if (overlayStrategy.delayMs > 0) {
                     Thread.sleep(overlayStrategy.delayMs)
                 }
+                engine.drainOldImages()
             }
 
             val pngBytes = engine.capture()
@@ -184,8 +184,8 @@ class CaptureService : Service() {
             Log.e(TAG, "Capture failed", e)
             sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
         } finally {
-            if (overlayHidden) {
-                overlayController?.restoreAfterCapture()
+            if (overlayRemoved) {
+                overlayController?.restoreAfterCaptureRemoval()
             }
         }
     }

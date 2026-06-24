@@ -200,7 +200,7 @@ class OverlayController(
     fun temporarilyRemoveForCapture(): Boolean {
         view?.let {
             try {
-                windowManager.removeView(it)
+                windowManager.removeViewImmediate(it)
                 return true
             } catch (e: Exception) {
                 // Ignore remove errors
