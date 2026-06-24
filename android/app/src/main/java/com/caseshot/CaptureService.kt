@@ -146,11 +146,12 @@ class CaptureService : Service() {
         val outputDir = fileStore.resolveOutputDir(this, config)
 
         val overlayStrategy = CaptureOverlayStrategy.from(config)
-        var overlayRemoved = false
+        var overlayHidden = false
 
         try {
-            if (overlayStrategy is CaptureOverlayStrategy.RemoveForCapture) {
-                overlayRemoved = overlayController?.temporarilyRemoveForCapture() == true
+            if (overlayStrategy is CaptureOverlayStrategy.HideForCapture) {
+                overlayController?.hideForCapture()
+                overlayHidden = true
                 if (overlayStrategy.delayMs > 0) {
                     Thread.sleep(overlayStrategy.delayMs)
                 }
@@ -183,8 +184,8 @@ class CaptureService : Service() {
             Log.e(TAG, "Capture failed", e)
             sendResultNotification("截图失败", e.message ?: "未知错误", isError = true)
         } finally {
-            if (overlayRemoved) {
-                overlayController?.restoreAfterCaptureRemoval()
+            if (overlayHidden) {
+                overlayController?.restoreAfterCapture()
             }
         }
     }
