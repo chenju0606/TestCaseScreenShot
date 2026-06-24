@@ -147,16 +147,22 @@ class CaptureService : Service() {
 
         val overlayStrategy = CaptureOverlayStrategy.from(config)
         var overlayRemoved = false
+        var frameBaseline = engine.currentFrameVersion()
 
         try {
             if (overlayStrategy is CaptureOverlayStrategy.RemoveForCapture) {
+                frameBaseline = engine.currentFrameVersion()
                 overlayRemoved = overlayController?.temporarilyRemoveForCapture() == true
                 if (overlayStrategy.delayMs > 0) {
                     Thread.sleep(overlayStrategy.delayMs)
                 }
             }
 
-            val pngBytes = engine.capture()
+            val pngBytes = if (overlayRemoved) {
+                engine.captureFreshAfter(frameBaseline)
+            } else {
+                engine.capture()
+            }
             val result = fileStore.writePngWithConflictResolution(
                 outputDir, filename, pngBytes, config.conflictResolution
             )

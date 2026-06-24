@@ -36,6 +36,7 @@ class ScreenCaptureEngine(private val context: Context) {
     private var captureHandler: Handler? = null
 
     private val bitmapLock = ReentrantReadWriteLock()
+    private val frameFreshnessGate = FrameFreshnessGate()
     @Volatile
     private var latestBitmap: Bitmap? = null
     private var firstFrameLatch: CountDownLatch = CountDownLatch(1)
@@ -122,6 +123,7 @@ class ScreenCaptureEngine(private val context: Context) {
                             latestBitmap = bitmap
                             old?.recycle()
                         }
+                        frameFreshnessGate.markFrameAvailable()
                         firstFrameLatch.countDown()
                     }
                 } catch (e: Exception) {
@@ -166,6 +168,13 @@ class ScreenCaptureEngine(private val context: Context) {
         } finally {
             isCapturing.set(false)
         }
+    }
+
+    fun currentFrameVersion(): Long = frameFreshnessGate.currentVersion()
+
+    fun captureFreshAfter(baselineVersion: Long): ByteArray {
+        frameFreshnessGate.awaitFrameAfter(baselineVersion, FIRST_FRAME_TIMEOUT_MS)
+        return capture()
     }
 
     fun stop() {
