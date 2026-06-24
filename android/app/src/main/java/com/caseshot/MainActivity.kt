@@ -16,10 +16,12 @@ import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
@@ -67,6 +69,11 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor(BG_COLOR))
+            isFillViewport = true
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -83,7 +90,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "批量截屏工具"
+            text = "批量截图工具"
             textSize = 14f
             setTextColor(Color.parseColor(TEXT_SECONDARY))
             setPadding(0, 0, 0, 32)
@@ -107,10 +114,10 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 24)
         }
 
-        prefixInput = createStyledEditText("用例前缀，输入样例：可留空 / ZYYH-US-88888-")
+        prefixInput = createStyledEditText("用例前缀，可留空，例如：ZYYH-US-88888-")
         caseDigitsInput = createStyledEditText("用例编号位数", true)
-        startCaseIndexInput = createStyledEditText("起始用例编号，输入样例：1，不带前面的0", true)
-        captureDelayInput = createStyledEditText("截屏延迟毫秒", true)
+        startCaseIndexInput = createStyledEditText("起始用例编号，例如：1，不带前导 0", true)
+        captureDelayInput = createStyledEditText("截图延迟毫秒", true)
 
         val outputDirLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -148,7 +155,7 @@ class MainActivity : Activity() {
         outputDirLayout.addView(dirPickerButton)
 
         hideOverlayCheck = CheckBox(this).apply {
-            text = "截图前隐藏悬浮窗"
+            text = "截图前移除悬浮窗，避免截进图片"
             setTextColor(Color.parseColor(TEXT_PRIMARY))
             buttonTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(SKY_BLUE))
         }
@@ -176,8 +183,8 @@ class MainActivity : Activity() {
                 restartService()
             }
         })
-        buttonsLayout.addView(createStyledButton("开始服务", true) { startCaptureFlow() })
-        buttonsLayout.addView(createStyledButton("停止服务", false) {
+        buttonsLayout.addView(createStyledButton("开始截图", true) { startCaptureFlow() })
+        buttonsLayout.addView(createStyledButton("停止截图", false) {
             stopService(Intent(this@MainActivity, CaptureService::class.java))
         })
 
@@ -196,7 +203,14 @@ class MainActivity : Activity() {
             buttonsLayout
         ).forEach { root.addView(it) }
 
-        setContentView(root)
+        scrollView.addView(
+            root,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+        setContentView(scrollView)
     }
 
     private fun createStyledEditText(hint: String, isNumber: Boolean = false): EditText {
