@@ -5,7 +5,7 @@ sealed class CaptureOverlayStrategy {
     data class RemoveForCapture(val delayMs: Long) : CaptureOverlayStrategy()
 
     companion object {
-        private const val MIN_REMOVE_SETTLE_DELAY_MS = 80L
+        private const val MIN_REMOVE_SETTLE_DELAY_MS = 120L
 
         fun from(config: CaseShotConfig): CaptureOverlayStrategy {
             return if (config.hideFloatingWindowBeforeCapture) {

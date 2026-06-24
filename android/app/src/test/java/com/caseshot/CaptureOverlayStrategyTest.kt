@@ -17,7 +17,7 @@ class CaptureOverlayStrategyTest {
     }
 
     @Test
-    fun removeOverlayWaitsAtLeastSeveralFramesBeforeCapture() {
+    fun removeOverlayWaitsAtLeastLongEnoughForNewFramesBeforeCapture() {
         val config = CaseShotConfig(
             hideFloatingWindowBeforeCapture = true,
             captureDelayMs = 0L
@@ -25,7 +25,7 @@ class CaptureOverlayStrategyTest {
 
         val strategy = CaptureOverlayStrategy.from(config)
 
-        assertEquals(CaptureOverlayStrategy.RemoveForCapture(80L), strategy)
+        assertEquals(CaptureOverlayStrategy.RemoveForCapture(120L), strategy)
     }
 
     @Test
