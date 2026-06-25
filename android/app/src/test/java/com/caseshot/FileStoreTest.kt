@@ -1,87 +1,78 @@
 package com.caseshot
 
 import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class FileStoreTest {
     @Test
-    fun writesPngBytesAndRejectsConflicts() {
-        val dir = createTempDir(prefix = "caseshot-test")
-        val fileStore = FileStore()
-        val bytes = byteArrayOf(1, 2, 3)
-        val target = fileStore.writePng(dir, "0001.png", bytes)
-
-        assertTrue(target.exists())
-        assertArrayEquals(bytes, target.readBytes())
-
-        try {
-            fileStore.writePng(dir, "0001.png", bytes)
-            throw AssertionError("Expected conflict")
-        } catch (error: IllegalStateException) {
-            assertTrue(error.message!!.contains("Target file already exists"))
-        } finally {
-            dir.deleteRecursively()
-        }
-    }
-
-    @Test
-    fun conflictResolutionSkip() {
+    fun writePngAtomicallyReturnsConflictWithoutOverwriting() {
         val dir = createTempDir(prefix = "caseshot-test")
         val fileStore = FileStore()
         val bytes1 = byteArrayOf(1, 2, 3)
         val bytes2 = byteArrayOf(4, 5, 6)
 
-        val result1 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes1, ConflictResolution.SKIP)
-        assertTrue(result1.success)
-        assertFalse(result1.skipped)
-        assertNotNull(result1.file)
+        val target = fileStore.targetFile(dir, "0001.png")
+        val result1 = fileStore.writePngAtomically(target, bytes1, overwrite = false)
+        assertTrue(result1 is ScreenshotSaveResult.Saved)
 
-        val result2 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes2, ConflictResolution.SKIP)
-        assertTrue(result2.success)
-        assertTrue(result2.skipped)
+        val result2 = fileStore.writePngAtomically(target, bytes2, overwrite = false)
+        assertTrue(result2 is ScreenshotSaveResult.Failed)
 
-        assertEquals(3, result1.file?.readBytes()?.size)
+        assertArrayEquals(bytes1, target.readBytes())
 
         dir.deleteRecursively()
     }
 
     @Test
-    fun conflictResolutionOverwrite() {
+    fun existingScreenshotPolicySkip() {
+        val dir = createTempDir(prefix = "caseshot-test")
+        val fileStore = FileStore()
+        val bytes1 = byteArrayOf(1, 2, 3)
+
+        val target = fileStore.targetFile(dir, "0001.png")
+        val result1 = fileStore.writePngAtomically(target, bytes1, overwrite = false)
+        assertTrue(result1 is ScreenshotSaveResult.Saved)
+
+        val result2 = fileStore.resolveExistingScreenshot(target, ExistingScreenshotPolicy.SKIP)
+        assertTrue(result2 is ScreenshotSaveResult.Skipped)
+
+        assertArrayEquals(bytes1, target.readBytes())
+
+        dir.deleteRecursively()
+    }
+
+    @Test
+    fun writePngAtomicallyOverwritesExistingFileWhenAllowed() {
         val dir = createTempDir(prefix = "caseshot-test")
         val fileStore = FileStore()
         val bytes1 = byteArrayOf(1, 2, 3)
         val bytes2 = byteArrayOf(4, 5, 6, 7)
 
-        val result1 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes1, ConflictResolution.OVERWRITE)
-        assertTrue(result1.success)
-        assertNotNull(result1.file)
+        val target = fileStore.targetFile(dir, "0001.png")
+        val result1 = fileStore.writePngAtomically(target, bytes1, overwrite = false)
+        assertTrue(result1 is ScreenshotSaveResult.Saved)
 
-        val result2 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes2, ConflictResolution.OVERWRITE)
-        assertTrue(result2.success)
-        assertNotNull(result2.file)
+        val result2 = fileStore.writePngAtomically(target, bytes2, overwrite = true)
+        assertTrue(result2 is ScreenshotSaveResult.Overwritten)
 
-        assertEquals(4, result2.file?.readBytes()?.size)
+        assertArrayEquals(bytes2, target.readBytes())
 
         dir.deleteRecursively()
     }
 
     @Test
-    fun conflictResolutionAsk() {
+    fun existingScreenshotPolicyAskReturnsFailureForCallerDecision() {
         val dir = createTempDir(prefix = "caseshot-test")
         val fileStore = FileStore()
         val bytes = byteArrayOf(1, 2, 3)
 
-        val result1 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes, ConflictResolution.ASK)
-        assertTrue(result1.success)
+        val target = fileStore.targetFile(dir, "0001.png")
+        val result1 = fileStore.writePngAtomically(target, bytes, overwrite = false)
+        assertTrue(result1 is ScreenshotSaveResult.Saved)
 
-        val result2 = fileStore.writePngWithConflictResolution(dir, "0001.png", bytes, ConflictResolution.ASK)
-        assertFalse(result2.success)
-        assertTrue(result2.error?.startsWith("CONFLICT:") == true)
+        val result2 = fileStore.resolveExistingScreenshot(target, ExistingScreenshotPolicy.ASK)
+        assertTrue(result2 is ScreenshotSaveResult.Failed)
 
         dir.deleteRecursively()
     }

@@ -18,6 +18,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class CaptureAccessibilityService : AccessibilityService() {
     private lateinit var configRepository: ConfigRepository
@@ -26,6 +28,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     private val fileStore = FileStore()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
+    private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     private var overlayController: OverlayController? = null
     private var captureInProgress = false
@@ -49,6 +52,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         overlayController?.remove()
         overlayController = null
+        ioExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -67,10 +71,6 @@ class CaptureAccessibilityService : AccessibilityService() {
             notifyResult("截图不可用", "当前系统不支持无障碍截图", isError = true)
             return
         }
-        if (!canCaptureNow()) {
-            notifyResult("截图太频繁", "请稍后再试", isError = true)
-            return
-        }
         if (captureInProgress) return
 
         val config = configRepository.load()
@@ -82,6 +82,50 @@ class CaptureAccessibilityService : AccessibilityService() {
             config.caseDigits
         )
         val outputDir = fileStore.resolveOutputDir(this, config)
+        val target = fileStore.targetFile(outputDir, filename)
+
+        if (target.exists()) {
+            when (config.existingScreenshotPolicy) {
+                ExistingScreenshotPolicy.SKIP -> {
+                    captureInProgress = true
+                    handleSaveResult(ScreenshotSaveResult.Skipped(target), current, config)
+                    captureInProgress = false
+                }
+                ExistingScreenshotPolicy.OVERWRITE -> {
+                    startScreenshotCapture(target, current, config, overwrite = true)
+                }
+                ExistingScreenshotPolicy.ASK -> {
+                    captureInProgress = true
+                    overlayController?.showExistingScreenshotPanel(
+                        filename = filename,
+                        onSkip = {
+                            handleSaveResult(ScreenshotSaveResult.Skipped(target), current, config)
+                            captureInProgress = false
+                        },
+                        onOverwrite = {
+                            startScreenshotCapture(target, current, config, overwrite = true)
+                        }
+                    )
+                }
+            }
+            return
+        }
+
+        startScreenshotCapture(target, current, config, overwrite = false)
+    }
+
+    private fun startScreenshotCapture(
+        target: java.io.File,
+        current: CaseShotState,
+        config: CaseShotConfig,
+        overwrite: Boolean
+    ) {
+        if (!canCaptureNow()) {
+            notifyResult("截图太频繁", "请稍后再试", isError = true)
+            captureInProgress = false
+            return
+        }
+
         val overlayRemoved = overlayController?.temporarilyRemoveForCapture() == true
         captureInProgress = true
 
@@ -91,31 +135,25 @@ class CaptureAccessibilityService : AccessibilityService() {
                 mainExecutor,
                 object : TakeScreenshotCallback {
                     override fun onSuccess(screenshot: ScreenshotResult) {
-                        try {
-                            val bitmap = screenshot.toBitmap()
-                            if (bitmap == null) {
-                                notifyCaptureFailure("截图结果为空")
-                                return
+                        ioExecutor.execute {
+                            val result = try {
+                                val bitmap = screenshot.toBitmap()
+                                if (bitmap == null) {
+                                    ScreenshotSaveResult.Failed("截图结果为空")
+                                } else {
+                                    try {
+                                        fileStore.writePngAtomically(target, bitmap.toPngBytes(), overwrite)
+                                    } finally {
+                                        bitmap.recycle()
+                                    }
+                                }
+                            } catch (error: Exception) {
+                                ScreenshotSaveResult.Failed(error.message ?: "保存失败")
                             }
-                            val result = fileStore.writePngWithConflictResolution(
-                                outputDir,
-                                filename,
-                                bitmap.toPngBytes(),
-                                config.conflictResolution
-                            )
-                            if (result.success) {
-                                val next = StateRepository.afterCaptureSuccess(current)
-                                stateRepository.save(next, config.prefix)
-                                notifyResult(
-                                    "截图已保存",
-                                    "${result.file?.name ?: filename}\n${result.file?.absolutePath ?: outputDir.absolutePath}"
-                                )
-                            } else {
-                                notifyCaptureFailure(result.error ?: "保存失败")
+                            mainHandler.post {
+                                handleSaveResult(result, current, config)
+                                completeCapture(overlayRemoved)
                             }
-                            bitmap.recycle()
-                        } finally {
-                            completeCapture(overlayRemoved)
                         }
                     }
 
@@ -125,6 +163,30 @@ class CaptureAccessibilityService : AccessibilityService() {
                     }
                 }
             )
+        }
+    }
+
+    private fun handleSaveResult(
+        result: ScreenshotSaveResult,
+        current: CaseShotState,
+        config: CaseShotConfig
+    ) {
+        when (result) {
+            is ScreenshotSaveResult.Saved -> {
+                stateRepository.save(StateRepository.afterCaptureSuccess(current), config.prefix)
+                notifyResult("截图已保存", "${result.file.name}\n${result.file.absolutePath}")
+            }
+            is ScreenshotSaveResult.Overwritten -> {
+                stateRepository.save(StateRepository.afterCaptureSuccess(current), config.prefix)
+                notifyResult("截图已覆盖", "${result.file.name}\n${result.file.absolutePath}")
+            }
+            is ScreenshotSaveResult.Skipped -> {
+                stateRepository.save(StateRepository.afterCaptureSuccess(current), config.prefix)
+                notifyResult("截图已跳过", result.file.name)
+            }
+            is ScreenshotSaveResult.Failed -> {
+                notifyCaptureFailure(result.error)
+            }
         }
     }
 

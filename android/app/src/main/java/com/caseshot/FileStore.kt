@@ -2,6 +2,8 @@ package com.caseshot
 
 import android.content.Context
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class FileStore {
 
@@ -18,60 +20,38 @@ class FileStore {
         return dir
     }
 
-    fun writePng(outputDir: File, filename: String, pngBytes: ByteArray): File {
-        if (!outputDir.exists() && !outputDir.mkdirs()) {
-            throw IllegalStateException("Unable to create output directory: ${outputDir.absolutePath}")
-        }
-        val target = File(outputDir, filename)
-        if (target.exists()) {
-            throw IllegalStateException("Target file already exists: ${target.absolutePath}")
-        }
-        target.writeBytes(pngBytes)
-        return target
-    }
+    fun targetFile(outputDir: File, filename: String): File = File(outputDir, filename)
 
-    data class WriteResult(
-        val success: Boolean,
-        val file: File? = null,
-        val skipped: Boolean = false,
-        val error: String? = null
-    )
-
-    fun writePngWithConflictResolution(
-        outputDir: File,
-        filename: String,
-        pngBytes: ByteArray,
-        conflictResolution: ConflictResolution
-    ): WriteResult {
-        if (!outputDir.exists() && !outputDir.mkdirs()) {
-            return WriteResult(
-                success = false,
-                error = "Unable to create output directory: ${outputDir.absolutePath}"
-            )
+    fun resolveExistingScreenshot(target: File, policy: ExistingScreenshotPolicy): ScreenshotSaveResult =
+        when (policy) {
+            ExistingScreenshotPolicy.SKIP -> ScreenshotSaveResult.Skipped(target)
+            ExistingScreenshotPolicy.OVERWRITE -> ScreenshotSaveResult.Overwritten(target)
+            ExistingScreenshotPolicy.ASK -> ScreenshotSaveResult.Failed("CONFLICT:${target.absolutePath}")
         }
 
-        val target = File(outputDir, filename)
+    fun writePngAtomically(target: File, pngBytes: ByteArray, overwrite: Boolean): ScreenshotSaveResult {
+        val parent = target.parentFile
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            return ScreenshotSaveResult.Failed("Unable to create output directory: ${parent.absolutePath}")
+        }
 
-        if (target.exists()) {
-            return when (conflictResolution) {
-                ConflictResolution.SKIP -> {
-                    WriteResult(success = true, skipped = true, file = target)
-                }
-                ConflictResolution.OVERWRITE -> {
-                    target.writeBytes(pngBytes)
-                    WriteResult(success = true, file = target)
-                }
-                ConflictResolution.ASK -> {
-                    WriteResult(
-                        success = false,
-                        error = "CONFLICT:${target.absolutePath}",
-                        file = target
-                    )
-                }
+        if (target.exists() && !overwrite) {
+            return ScreenshotSaveResult.Failed("CONFLICT:${target.absolutePath}")
+        }
+
+        val temp = File(target.parentFile, "${target.name}.tmp")
+        return try {
+            temp.writeBytes(pngBytes)
+            if (overwrite) {
+                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                ScreenshotSaveResult.Overwritten(target)
+            } else {
+                Files.move(temp.toPath(), target.toPath())
+                ScreenshotSaveResult.Saved(target)
             }
+        } catch (error: Exception) {
+            temp.delete()
+            ScreenshotSaveResult.Failed(error.message ?: "Unable to save screenshot")
         }
-
-        target.writeBytes(pngBytes)
-        return WriteResult(success = true, file = target)
     }
 }

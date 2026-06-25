@@ -16,9 +16,9 @@ class ConfigRepository(private val context: Context) {
             imageFormat = prefs.getString("imageFormat", "png").orEmpty(),
             enableSmb = prefs.getBoolean("enableSmb", false),
             smbUrl = prefs.getString("smbUrl", "").orEmpty(),
-            conflictResolution = ConflictResolution.valueOf(
-                prefs.getString("conflictResolution", ConflictResolution.ASK.name).orEmpty()
-                    .ifEmpty { ConflictResolution.ASK.name }
+            existingScreenshotPolicy = ExistingScreenshotPolicy.valueOf(
+                prefs.getString("existingScreenshotPolicy", prefs.getString("conflictResolution", ExistingScreenshotPolicy.ASK.name)).orEmpty()
+                    .ifEmpty { ExistingScreenshotPolicy.ASK.name }
             )
         )
     )
@@ -35,7 +35,7 @@ class ConfigRepository(private val context: Context) {
             .putString("imageFormat", normalized.imageFormat)
             .putBoolean("enableSmb", normalized.enableSmb)
             .putString("smbUrl", normalized.smbUrl)
-            .putString("conflictResolution", normalized.conflictResolution.name)
+            .putString("existingScreenshotPolicy", normalized.existingScreenshotPolicy.name)
             .apply()
         return normalized
     }

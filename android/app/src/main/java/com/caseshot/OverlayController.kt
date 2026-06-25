@@ -16,7 +16,9 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.TextView
 
 class OverlayController(
     private val context: Context,
@@ -45,6 +47,9 @@ class OverlayController(
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var view: View? = null
     private var params: WindowManager.LayoutParams? = null
+    private var controlsLayout: LinearLayout? = null
+    private var screenshotButton: ImageButton? = null
+    private var doneButton: ImageButton? = null
 
     private fun createIconButton(iconRes: Int): ImageButton {
         return ImageButton(context).apply {
@@ -97,10 +102,8 @@ class OverlayController(
             }
         }
 
-        val screenshotButton = createIconButton(R.drawable.screenshot)
-        val doneButton = createIconButton(R.drawable.arrow_circle_right)
-        layout.addView(screenshotButton)
-        layout.addView(doneButton)
+        controlsLayout = layout
+        restoreControls()
 
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -155,9 +158,9 @@ class OverlayController(
                     handler.removeCallbacks(longPressRunnable)
                     if (isLongPressing) {
                         isLongPressing = false
-                    } else if (isWithinButton(event.rawX, event.rawY, screenshotButton)) {
+                    } else if (screenshotButton?.let { isWithinButton(event.rawX, event.rawY, it) } == true) {
                         onScreenshot()
-                    } else if (isWithinButton(event.rawX, event.rawY, doneButton)) {
+                    } else if (doneButton?.let { isWithinButton(event.rawX, event.rawY, it) } == true) {
                         onDone()
                     }
                     true
@@ -174,6 +177,53 @@ class OverlayController(
         windowManager.addView(layout, layoutParams)
         view = layout
         params = layoutParams
+    }
+
+    fun showExistingScreenshotPanel(
+        filename: String,
+        onSkip: () -> Unit,
+        onOverwrite: () -> Unit
+    ) {
+        controlsLayout?.apply {
+            removeAllViews()
+            screenshotButton = null
+            doneButton = null
+            addView(TextView(context).apply {
+                text = "截图已存在"
+                textSize = 16f
+                setTextColor(Color.parseColor(SKY_BLUE))
+                setPadding(16, 12, 16, 4)
+            })
+            addView(TextView(context).apply {
+                text = filename
+                textSize = 13f
+                setTextColor(Color.DKGRAY)
+                setPadding(16, 4, 16, 12)
+            })
+            addView(Button(context).apply {
+                text = "跳过"
+                setOnClickListener {
+                    restoreControls()
+                    onSkip()
+                }
+            })
+            addView(Button(context).apply {
+                text = "覆盖"
+                setOnClickListener {
+                    restoreControls()
+                    onOverwrite()
+                }
+            })
+        }
+    }
+
+    fun restoreControls() {
+        val layout = controlsLayout ?: return
+        layout.removeAllViews()
+        screenshotButton = createIconButton(R.drawable.screenshot)
+        doneButton = createIconButton(R.drawable.arrow_circle_right)
+        layout.addView(screenshotButton)
+        layout.addView(doneButton)
     }
 
     fun hideForCapture() {
