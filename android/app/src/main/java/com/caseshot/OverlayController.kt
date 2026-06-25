@@ -21,7 +21,13 @@ import android.widget.LinearLayout
 class OverlayController(
     private val context: Context,
     private val onScreenshot: () -> Unit,
-    private val onDone: () -> Unit
+    private val onDone: () -> Unit,
+    private val windowType: Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+    } else {
+        @Suppress("DEPRECATION")
+        WindowManager.LayoutParams.TYPE_PHONE
+    }
 ) {
     companion object {
         private const val SKY_BLUE = "#2196F3"
@@ -99,12 +105,7 @@ class OverlayController(
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
+            windowType,
             OverlayWindowFlags.defaultFlags(),
             PixelFormat.TRANSLUCENT
         ).apply {

@@ -1,13 +1,11 @@
 package com.caseshot
 
 import android.app.Activity
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -17,8 +15,8 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityManager
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,9 +24,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
-
     companion object {
-        private const val REQUEST_CAPTURE = 1001
         private const val REQUEST_DIRECTORY = 1002
         private const val SKY_BLUE = "#2196F3"
         private const val SKY_BLUE_DARK = "#1976D2"
@@ -40,24 +36,19 @@ class MainActivity : Activity() {
 
     private lateinit var configRepository: ConfigRepository
     private lateinit var stateRepository: StateRepository
-    private lateinit var namingService: NamingService
-    private lateinit var projectionManager: MediaProjectionManager
+    private val namingService = NamingService()
 
     private lateinit var prefixInput: EditText
     private lateinit var caseDigitsInput: EditText
     private lateinit var startCaseIndexInput: EditText
     private lateinit var outputDirInput: EditText
-    private lateinit var captureDelayInput: EditText
-    private lateinit var hideOverlayCheck: CheckBox
     private lateinit var targetPreview: TextView
-    private lateinit var permissionStatus: TextView
+    private lateinit var serviceStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configRepository = ConfigRepository(this)
         stateRepository = StateRepository(this)
-        namingService = NamingService()
-        projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         buildUi()
         loadConfigIntoUi()
         refreshPreview()
@@ -73,7 +64,6 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.parseColor(BG_COLOR))
             isFillViewport = true
         }
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -88,14 +78,12 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, 8)
         }
-
         val subtitle = TextView(this).apply {
-            text = "批量截图工具"
+            text = "无障碍截图工具"
             textSize = 14f
             setTextColor(Color.parseColor(TEXT_SECONDARY))
             setPadding(0, 0, 0, 32)
         }
-
         targetPreview = TextView(this).apply {
             textSize = 18f
             setTextColor(Color.parseColor(TEXT_PRIMARY))
@@ -107,8 +95,7 @@ class MainActivity : Activity() {
                 setStroke(2, Color.parseColor(SKY_BLUE_LIGHT))
             }
         }
-
-        permissionStatus = TextView(this).apply {
+        serviceStatus = TextView(this).apply {
             textSize = 13f
             setTextColor(Color.parseColor(TEXT_SECONDARY))
             setPadding(0, 12, 0, 24)
@@ -117,13 +104,11 @@ class MainActivity : Activity() {
         prefixInput = createStyledEditText("用例前缀，可留空，例如：ZYYH-US-88888-")
         caseDigitsInput = createStyledEditText("用例编号位数", true)
         startCaseIndexInput = createStyledEditText("起始用例编号，例如：1，不带前导 0", true)
-        captureDelayInput = createStyledEditText("截图延迟毫秒", true)
 
         val outputDirLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-
         outputDirInput = createStyledEditText("保存目录，留空使用应用目录").apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -131,7 +116,6 @@ class MainActivity : Activity() {
                 1f
             )
         }
-
         val dirPickerButton = Button(this).apply {
             text = "选择"
             setTextColor(Color.WHITE)
@@ -150,15 +134,8 @@ class MainActivity : Activity() {
                 setMargins(16, 0, 0, 0)
             }
         }
-
         outputDirLayout.addView(outputDirInput)
         outputDirLayout.addView(dirPickerButton)
-
-        hideOverlayCheck = CheckBox(this).apply {
-            text = "截图前移除悬浮窗，避免截进图片"
-            setTextColor(Color.parseColor(TEXT_PRIMARY))
-            buttonTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(SKY_BLUE))
-        }
 
         val configSection = TextView(this).apply {
             text = "配置"
@@ -167,39 +144,29 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 24, 0, 12)
         }
-
         val buttonsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 24, 0, 0)
         }
 
-        buttonsLayout.addView(createStyledButton("打开悬浮窗权限", false) { openOverlaySettings() })
-        buttonsLayout.addView(createStyledButton("打开通知权限", false) { openNotificationSettings() })
+        buttonsLayout.addView(createStyledButton("打开无障碍权限", true) { openAccessibilitySettings() })
         buttonsLayout.addView(createStyledButton("保存配置", false) {
             val config = saveConfigFromUi()
+            resetStateToStart(config)
             refreshPreview()
             Toast.makeText(this@MainActivity, "配置已保存", Toast.LENGTH_SHORT).show()
-            if (isServiceRunning()) {
-                restartService()
-            }
-        })
-        buttonsLayout.addView(createStyledButton("开始截图", true) { startCaptureFlow() })
-        buttonsLayout.addView(createStyledButton("停止截图", false) {
-            stopService(Intent(this@MainActivity, CaptureService::class.java))
         })
 
         listOf<View>(
             title,
             subtitle,
             targetPreview,
-            permissionStatus,
+            serviceStatus,
             configSection,
             prefixInput,
             caseDigitsInput,
             startCaseIndexInput,
             outputDirLayout,
-            captureDelayInput,
-            hideOverlayCheck,
             buttonsLayout
         ).forEach { root.addView(it) }
 
@@ -213,8 +180,8 @@ class MainActivity : Activity() {
         setContentView(scrollView)
     }
 
-    private fun createStyledEditText(hint: String, isNumber: Boolean = false): EditText {
-        return EditText(this).apply {
+    private fun createStyledEditText(hint: String, isNumber: Boolean = false): EditText =
+        EditText(this).apply {
             this.hint = hint
             setTextColor(Color.parseColor(TEXT_PRIMARY))
             setHintTextColor(Color.parseColor(TEXT_SECONDARY))
@@ -235,10 +202,9 @@ class MainActivity : Activity() {
                 setMargins(0, 8, 0, 8)
             }
         }
-    }
 
-    private fun createStyledButton(text: String, isPrimary: Boolean, onClick: () -> Unit): Button {
-        return Button(this).apply {
+    private fun createStyledButton(text: String, isPrimary: Boolean, onClick: () -> Unit): Button =
+        Button(this).apply {
             this.text = text
             setTextColor(if (isPrimary) Color.WHITE else Color.parseColor(SKY_BLUE))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -262,7 +228,6 @@ class MainActivity : Activity() {
                 setMargins(0, 8, 0, 8)
             }
         }
-    }
 
     private fun loadConfigIntoUi() {
         val config = configRepository.load()
@@ -270,40 +235,47 @@ class MainActivity : Activity() {
         caseDigitsInput.setText(config.caseDigits.toString())
         startCaseIndexInput.setText(config.startCaseIndex.toString())
         outputDirInput.setText(config.outputDir)
-        captureDelayInput.setText(config.captureDelayMs.toString())
-        hideOverlayCheck.isChecked = config.hideFloatingWindowBeforeCapture
     }
 
-    private fun saveConfigFromUi(): CaseShotConfig {
-        val config = CaseShotConfig(
-            prefix = prefixInput.text.toString(),
-            caseDigits = caseDigitsInput.text.toString().toIntOrNull() ?: 3,
-            startCaseIndex = startCaseIndexInput.text.toString().toIntOrNull() ?: 1,
-            outputDir = outputDirInput.text.toString(),
-            captureDelayMs = captureDelayInput.text.toString().toLongOrNull() ?: 300L,
-            hideFloatingWindowBeforeCapture = hideOverlayCheck.isChecked
+    private fun saveConfigFromUi(): CaseShotConfig =
+        configRepository.save(
+            CaseShotConfig(
+                prefix = prefixInput.text.toString(),
+                caseDigits = caseDigitsInput.text.toString().toIntOrNull() ?: 3,
+                startCaseIndex = startCaseIndexInput.text.toString().toIntOrNull() ?: 1,
+                outputDir = outputDirInput.text.toString()
+            )
         )
-        return configRepository.save(config)
+
+    private fun resetStateToStart(config: CaseShotConfig) {
+        val currentState = stateRepository.load(config.prefix)
+        val resetState = StateRepository.resetToStartCase(
+            currentState,
+            config.prefix,
+            config.startCaseIndex
+        )
+        stateRepository.save(resetState, config.prefix)
     }
 
     private fun refreshPreview() {
         val config = configRepository.load()
         val state = stateRepository.load(config.prefix)
-        val filename = namingService.buildFilename(state.prefix, state.caseIndex, state.shotIndex, config.caseDigits)
-        targetPreview.text = "  下一张: $filename"
-        permissionStatus.text = if (Settings.canDrawOverlays(this)) "✓ 悬浮窗权限已允许" else "✗ 悬浮窗权限未允许"
-    }
-
-    private fun openOverlaySettings() {
-        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-        startActivity(intent)
-    }
-
-    private fun openNotificationSettings() {
-        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        val filename = namingService.buildFilename(
+            state.prefix,
+            state.caseIndex,
+            state.shotIndex,
+            config.caseDigits
+        )
+        targetPreview.text = "下一张: $filename"
+        serviceStatus.text = if (isAccessibilityServiceEnabled()) {
+            "✓ 无障碍服务已开启，悬浮按钮会自动显示"
+        } else {
+            "✗ 请开启 CaseShot 无障碍服务后使用悬浮截图"
         }
-        startActivity(intent)
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun openDirectoryPicker() {
@@ -311,78 +283,44 @@ class MainActivity : Activity() {
         startActivityForResult(intent, REQUEST_DIRECTORY)
     }
 
-    private fun startCaptureFlow() {
-        val config = saveConfigFromUi()
-        if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
-            openOverlaySettings()
-            return
-        }
-        val currentState = stateRepository.load(config.prefix)
-        val resetState = StateRepository.resetToStartCase(currentState, config.prefix, config.startCaseIndex)
-        stateRepository.save(resetState, config.prefix)
-        refreshPreview()
-        startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_CAPTURE)
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CAPTURE && resultCode == RESULT_OK && data != null) {
-            val intent = Intent(this, CaptureService::class.java)
-                .putExtra(CaptureService.EXTRA_RESULT_CODE, resultCode)
-                .putExtra(CaptureService.EXTRA_RESULT_DATA, data)
-            startForegroundService(intent)
-        } else if (requestCode == REQUEST_CAPTURE) {
-            Toast.makeText(this, "未获得截屏权限", Toast.LENGTH_SHORT).show()
-        } else if (requestCode == REQUEST_DIRECTORY && resultCode == RESULT_OK && data != null) {
-            val uri = data.data
-            if (uri != null) {
-                val path = getRealPathFromDocumentTree(uri)
-                if (path != null) {
-                    outputDirInput.setText(path)
-                } else {
-                    Toast.makeText(this, "无法解析目录路径", Toast.LENGTH_SHORT).show()
-                }
+        if (requestCode == REQUEST_DIRECTORY && resultCode == RESULT_OK && data != null) {
+            val uri = data.data ?: return
+            val path = getRealPathFromDocumentTree(uri)
+            if (path != null) {
+                outputDirInput.setText(path)
+            } else {
+                Toast.makeText(this, "无法解析目录路径", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun isServiceRunning(): Boolean {
-        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        @Suppress("DEPRECATION")
-        for (service in manager.getRunningServices(Int.MAX_VALUE)) {
-            if (CaptureService::class.java.name == service.service.className) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private fun restartService() {
-        stopService(Intent(this, CaptureService::class.java))
-        startCaptureFlow()
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val manager = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        if (!manager.isEnabled) return false
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val expected = "$packageName/${CaptureAccessibilityService::class.java.name}"
+        return enabledServices
+            .split(':')
+            .any { it.equals(expected, ignoreCase = true) }
     }
 
     private fun getRealPathFromDocumentTree(uri: Uri): String? {
         val docId = DocumentsContract.getTreeDocumentId(uri)
         if (docId.isEmpty()) return null
-
         val split = docId.split(":")
         if (split.size < 2) return null
-
         val volumeId = split[0]
         val relativePath = split.subList(1, split.size).joinToString(":")
-
         val basePath = when (volumeId) {
             "primary" -> Environment.getExternalStorageDirectory().absolutePath
             "external" -> Environment.getExternalStorageDirectory().absolutePath
             else -> "/storage/$volumeId"
         }
-
-        return if (relativePath.isNotEmpty()) {
-            "$basePath/$relativePath"
-        } else {
-            basePath
-        }
+        return if (relativePath.isNotEmpty()) "$basePath/$relativePath" else basePath
     }
 }
