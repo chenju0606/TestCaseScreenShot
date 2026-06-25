@@ -1,12 +1,15 @@
 package com.caseshot
 
 import android.app.Activity
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
@@ -26,6 +29,7 @@ import android.widget.Toast
 class MainActivity : Activity() {
     companion object {
         private const val REQUEST_DIRECTORY = 1002
+        private const val REQUEST_NOTIFICATIONS = 1003
         private const val SKY_BLUE = "#2196F3"
         private const val SKY_BLUE_DARK = "#1976D2"
         private const val SKY_BLUE_LIGHT = "#BBDEFB"
@@ -149,7 +153,8 @@ class MainActivity : Activity() {
             setPadding(0, 24, 0, 0)
         }
 
-        buttonsLayout.addView(createStyledButton("打开无障碍权限", true) { openAccessibilitySettings() })
+        buttonsLayout.addView(createStyledButton("打开无障碍设置", true) { openAccessibilitySettings() })
+        buttonsLayout.addView(createStyledButton("打开通知权限", false) { openNotificationSettings() })
         buttonsLayout.addView(createStyledButton("保存配置", false) {
             val config = saveConfigFromUi()
             resetStateToStart(config)
@@ -268,14 +273,27 @@ class MainActivity : Activity() {
         )
         targetPreview.text = "下一张: $filename"
         serviceStatus.text = if (isAccessibilityServiceEnabled()) {
-            "✓ 无障碍服务已开启，悬浮按钮会自动显示"
+            "✓ 无障碍服务已开启，授权一次即可持续使用"
         } else {
-            "✗ 请开启 CaseShot 无障碍服务后使用悬浮截图"
+            "✗ 请先开启 CaseShot 无障碍服务；开启后无需每次进入设置"
         }
     }
 
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun openNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+            return
+        }
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        startActivity(intent)
     }
 
     private fun openDirectoryPicker() {

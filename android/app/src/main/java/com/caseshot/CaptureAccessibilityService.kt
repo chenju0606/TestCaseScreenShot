@@ -3,6 +3,9 @@ package com.caseshot
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityService.ScreenshotResult
 import android.accessibilityservice.AccessibilityService.TakeScreenshotCallback
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
@@ -27,11 +30,13 @@ class CaptureAccessibilityService : AccessibilityService() {
     private var overlayController: OverlayController? = null
     private var captureInProgress = false
     private var lastCaptureTime = 0L
+    private var resultNotificationId = RESULT_NOTIFICATION_ID
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         configRepository = ConfigRepository(this)
         stateRepository = StateRepository(this)
+        createNotificationChannel()
         showOverlay()
     }
 
@@ -59,11 +64,11 @@ class CaptureAccessibilityService : AccessibilityService() {
 
     private fun captureCurrentScreen() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            Toast.makeText(this, "当前系统不支持无障碍截图", Toast.LENGTH_SHORT).show()
+            notifyResult("截图不可用", "当前系统不支持无障碍截图", isError = true)
             return
         }
         if (!canCaptureNow()) {
-            Toast.makeText(this, "截图太频繁，请稍后再试", Toast.LENGTH_SHORT).show()
+            notifyResult("截图太频繁", "请稍后再试", isError = true)
             return
         }
         if (captureInProgress) return
@@ -101,11 +106,10 @@ class CaptureAccessibilityService : AccessibilityService() {
                             if (result.success) {
                                 val next = StateRepository.afterCaptureSuccess(current)
                                 stateRepository.save(next, config.prefix)
-                                Toast.makeText(
-                                    this@CaptureAccessibilityService,
-                                    "截图已保存: ${result.file?.name ?: filename}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                notifyResult(
+                                    "截图已保存",
+                                    "${result.file?.name ?: filename}\n${result.file?.absolutePath ?: outputDir.absolutePath}"
+                                )
                             } else {
                                 notifyCaptureFailure(result.error ?: "保存失败")
                             }
@@ -137,7 +141,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         val next = StateRepository.nextCase(current)
         stateRepository.save(next, config.prefix)
         val caseId = namingService.buildCaseId(next.prefix, next.caseIndex, config.caseDigits)
-        Toast.makeText(this, "已进入用例 $caseId", Toast.LENGTH_SHORT).show()
+        notifyResult("用例切换", "已进入用例 $caseId")
     }
 
     private fun runAfterFrames(frameCount: Int, block: () -> Unit) {
@@ -165,6 +169,39 @@ class CaptureAccessibilityService : AccessibilityService() {
 
     private fun notifyCaptureFailure(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        notifyResult("截图失败", message, isError = true)
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                RESULT_CHANNEL_ID,
+                "CaseShot 结果",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "截图保存、失败和用例切换提示"
+                enableVibration(true)
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    private fun notifyResult(title: String, message: String, isError: Boolean = false) {
+        Toast.makeText(this, title, Toast.LENGTH_SHORT).show()
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, RESULT_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        val notification = builder
+            .setContentTitle(title)
+            .setContentText(message.lineSequence().firstOrNull().orEmpty())
+            .setStyle(Notification.BigTextStyle().bigText(message))
+            .setSmallIcon(if (isError) android.R.drawable.ic_dialog_alert else android.R.drawable.ic_menu_camera)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(resultNotificationId++, notification)
     }
 
     private fun ScreenshotResult.toBitmap(): Bitmap? {
@@ -184,5 +221,7 @@ class CaptureAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val MIN_CAPTURE_INTERVAL_MS = 500L
+        private const val RESULT_CHANNEL_ID = "caseshot_result"
+        private const val RESULT_NOTIFICATION_ID = 100
     }
 }
