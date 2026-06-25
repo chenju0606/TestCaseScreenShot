@@ -13,3 +13,8 @@ local.properties
 # OS files
 .DS_Store
 Thumbs.db
+
+# AI files
+.omo/
+.agents/
+.codegraph
