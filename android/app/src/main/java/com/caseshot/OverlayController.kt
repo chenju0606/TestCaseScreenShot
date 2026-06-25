@@ -4,20 +4,22 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.widget.LinearLayout
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.Button
-import android.widget.LinearLayout
+import android.widget.Space
 import android.widget.TextView
 
 class OverlayController(
@@ -50,6 +52,16 @@ class OverlayController(
     private var controlsLayout: LinearLayout? = null
     private var screenshotButton: ImageButton? = null
     private var doneButton: ImageButton? = null
+
+    private fun dp(value: Int): Int =
+        (value * context.resources.displayMetrics.density).toInt()
+
+    private fun createControlsBackground(): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(Color.parseColor(OVERLAY_BG))
+            cornerRadius = CONTAINER_CORNER_PX
+            setStroke(STROKE_PX, Color.parseColor(SKY_BLUE))
+        }
 
     private fun createIconButton(iconRes: Int): ImageButton {
         return ImageButton(context).apply {
@@ -95,11 +107,7 @@ class OverlayController(
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor(OVERLAY_BG))
-                cornerRadius = CONTAINER_CORNER_PX
-                setStroke(STROKE_PX, Color.parseColor(SKY_BLUE))
-            }
+            background = createControlsBackground()
         }
 
         controlsLayout = layout
@@ -188,38 +196,72 @@ class OverlayController(
             removeAllViews()
             screenshotButton = null
             doneButton = null
+            background = context.getDrawable(R.drawable.bg_float_panel)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            minimumWidth = dp(230)
             addView(TextView(context).apply {
                 text = "截图已存在"
-                textSize = 16f
-                setTextColor(Color.parseColor(SKY_BLUE))
-                setPadding(16, 12, 16, 4)
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(context.getColor(R.color.evidence_text_primary))
             })
             addView(TextView(context).apply {
-                text = filename
+                text = "$filename 已存在，请选择处理方式"
                 textSize = 13f
-                setTextColor(Color.DKGRAY)
-                setPadding(16, 4, 16, 12)
+                setTextColor(context.getColor(R.color.evidence_text_secondary))
+                maxWidth = dp(230)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.MIDDLE
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, dp(4), 0, 0)
+                }
             })
-            addView(Button(context).apply {
-                text = "跳过"
-                setOnClickListener {
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, dp(10), 0, 0)
+                }
+                addView(createConflictAction("跳过", R.drawable.bg_btn_skip) {
                     restoreControls()
                     onSkip()
-                }
-            })
-            addView(Button(context).apply {
-                text = "覆盖"
-                setOnClickListener {
+                })
+                addView(Space(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(8), 1)
+                })
+                addView(createConflictAction("覆盖", R.drawable.bg_btn_overwrite) {
                     restoreControls()
                     onOverwrite()
-                }
+                })
             })
         }
     }
 
+    private fun createConflictAction(text: String, backgroundRes: Int, onClick: () -> Unit): TextView =
+        TextView(context).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setBackgroundResource(backgroundRes)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f)
+        }
+
     fun restoreControls() {
         val layout = controlsLayout ?: return
         layout.removeAllViews()
+        layout.background = createControlsBackground()
+        layout.setPadding(CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX, CONTAINER_PADDING_PX)
+        layout.minimumWidth = 0
         screenshotButton = createIconButton(R.drawable.screenshot)
         doneButton = createIconButton(R.drawable.arrow_circle_right)
         layout.addView(screenshotButton)

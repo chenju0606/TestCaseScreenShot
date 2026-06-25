@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">CaseShot</string>
-    <string name="accessibility_service_desc">CaseShot uses accessibility screenshots to capture test evidence and show floating capture controls.</string>
+    <string name="app_name">测试证迹助手</string>
+    <string name="accessibility_service_label">测试证迹助手服务</string>
+    <string name="accessibility_service_desc">用于在测试执行过程中辅助截取屏幕证迹，提升测试记录效率。</string>
 </resources>

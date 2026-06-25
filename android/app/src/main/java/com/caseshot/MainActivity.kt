@@ -76,14 +76,14 @@ class MainActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = "CaseShot"
+            text = "测试证迹助手"
             textSize = 28f
             setTextColor(Color.parseColor(SKY_BLUE_DARK))
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, 0, 0, 8)
         }
         val subtitle = TextView(this).apply {
-            text = "无障碍截图工具"
+            text = "测试执行过程中的证迹记录助手"
             textSize = 14f
             setTextColor(Color.parseColor(TEXT_SECONDARY))
             setPadding(0, 0, 0, 32)
@@ -275,7 +275,7 @@ class MainActivity : Activity() {
         serviceStatus.text = if (isAccessibilityServiceEnabled()) {
             "✓ 无障碍服务已开启，授权一次即可持续使用"
         } else {
-            "✗ 请先开启 CaseShot 无障碍服务；开启后无需每次进入设置"
+            "✗ 请先开启测试证迹助手服务；开启后无需每次进入设置"
         }
     }
 

@@ -68,7 +68,7 @@ class CaptureAccessibilityService : AccessibilityService() {
 
     private fun captureCurrentScreen() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            notifyResult("截图不可用", "当前系统不支持无障碍截图", isError = true)
+            notifyResult("截图不可用", "当前系统不支持该截图方式", isError = true)
             return
         }
         if (captureInProgress) return
@@ -158,7 +158,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                     }
 
                     override fun onFailure(errorCode: Int) {
-                        notifyCaptureFailure("无障碍截图失败: $errorCode")
+                        notifyCaptureFailure("截图失败: $errorCode")
                         completeCapture(overlayRemoved)
                     }
                 }
@@ -238,7 +238,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 RESULT_CHANNEL_ID,
-                "CaseShot 结果",
+                "测试证迹助手结果",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "截图保存、失败和用例切换提示"
