@@ -7,6 +7,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -260,10 +263,27 @@ class CaptureAccessibilityService : AccessibilityService() {
             .setContentTitle(title)
             .setContentText(message.lineSequence().firstOrNull().orEmpty())
             .setStyle(Notification.BigTextStyle().bigText(message))
-            .setSmallIcon(if (isError) android.R.drawable.ic_dialog_alert else android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(createNotificationLargeIcon())
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(resultNotificationId++, notification)
+    }
+
+    private fun createNotificationLargeIcon(): Bitmap {
+        val size = (64 * resources.displayMetrics.density).toInt().coerceAtLeast(64)
+        val bounds = Rect(0, 0, size, size)
+        val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        BitmapFactory.decodeResource(resources, R.drawable.ic_launcher_background)?.let { background ->
+            canvas.drawBitmap(background, null, bounds, null)
+            background.recycle()
+        }
+        BitmapFactory.decodeResource(resources, R.drawable.ic_launcher_foreground)?.let { foreground ->
+            canvas.drawBitmap(foreground, null, bounds, null)
+            foreground.recycle()
+        }
+        return output
     }
 
     private fun ScreenshotResult.toBitmap(): Bitmap? {
