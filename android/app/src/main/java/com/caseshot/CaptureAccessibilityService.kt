@@ -265,6 +265,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             .setStyle(Notification.BigTextStyle().bigText(message))
             .setSmallIcon(R.drawable.ic_notification)
             .setLargeIcon(createNotificationLargeIcon())
+            .setTimeoutAfter(if (isError) ERROR_NOTIFICATION_TIMEOUT_MS else RESULT_NOTIFICATION_TIMEOUT_MS)
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(resultNotificationId++, notification)
@@ -305,5 +306,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         private const val MIN_CAPTURE_INTERVAL_MS = 500L
         private const val RESULT_CHANNEL_ID = "caseshot_result"
         private const val RESULT_NOTIFICATION_ID = 100
+        private const val RESULT_NOTIFICATION_TIMEOUT_MS = 2_000L
+        private const val ERROR_NOTIFICATION_TIMEOUT_MS = 3_000L
     }
 }
